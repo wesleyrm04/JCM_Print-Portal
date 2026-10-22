@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Souvenirs & Gifts | JC Hub</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .hero-section {
+            background-color: #dc3545; /* Bootstrap Danger/Red theme for souvenirs */
+            color: white;
+            padding: 50px 0;
+            text-align: center;
+            border-bottom: 5px solid #ff7979;
+        }
+        .gallery-item {
+            transition: transform 0.3s;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background: white;
+        }
+        .gallery-item:hover {
+            transform: scale(1.03);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        }
+        .gallery-img {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body class="bg-light">
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/">JC Tech & Print Hub</a>
+            <a href="/" class="btn btn-outline-light btn-sm ms-auto">Back to Home</a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <div class="hero-section">
+        <div class="container">
+            <h1 class="display-5 fw-bold">🎁 Custom Souvenirs & Gifts</h1>
+            <p class="lead">Personalized invitations, magnets, keychains, and party favors for any occasion.</p>
+        </div>
+    </div>
+
+    <!-- Gallery Grid -->
+    <div class="container my-5">
+        
+        <!-- Category: Magnets & Keychains -->
+        <h3 class="mb-4 text-danger border-bottom pb-2">Keychains & Fridge Magnets</h3>
+        <div class="row g-4 mb-5">
+            <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/473601503_623107957327889_4500035839716247704_n.jpg" class="gallery-img" alt="Custom Keychain">
+                    <div class="p-3 text-center fw-bold text-dark">Back-to-Back Keychains (₱20)</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/473265139_620589684246383_9117151090067098987_n.jpg" class="gallery-img" alt="Cars Magnets">
+                    <div class="p-3 text-center fw-bold text-dark">Birthday Ref Magnets</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/472668113_620589384246413_3225702170662326905_n.jpg" class="gallery-img" alt="Assorted Magnets">
+                    <div class="p-3 text-center fw-bold text-dark">Custom Event Magnets</div>
+                </div>
+            </div>
+             <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/473002130_620589780913040_6630652098382717823_n.jpg" class="gallery-img" alt="Dino Souvenirs">
+                    <div class="p-3 text-center fw-bold text-dark">Themed Party Favors</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category: Invitations & Name Tags -->
+        <h3 class="mb-4 text-danger border-bottom pb-2">Invitations & Name Tags</h3>
+        <div class="row g-4 mb-5">
+            <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/475987361_637658889206129_797339117601465013_n.jpg" class="gallery-img" alt="Dedication Invitation">
+                    <div class="p-3 text-center fw-bold text-dark">Christening / Dedication</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/476332242_637658899206128_759204822908155878_n.jpg" class="gallery-img" alt="Rainbow Invitation">
+                    <div class="p-3 text-center fw-bold text-dark">First Birthday Invitations</div>
+                </div>
+            </div>
+             <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/475464368_637658892539462_4052887853046638795_n.jpg" class="gallery-img" alt="Wrapped Invitations">
+                    <div class="p-3 text-center fw-bold text-dark">Elegant Event Wraps</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="gallery-item">
+                    <img src="/static/images/480518536_648402938131724_5402518772263412281_n.jpg" class="gallery-img" alt="Frozen Name Tags">
+                    <div class="p-3 text-center fw-bold text-dark">School Name Tags</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category: Custom Standees -->
+        <h3 class="mb-4 text-danger border-bottom pb-2">Custom Standees</h3>
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="gallery-item">
+                    <img src="/static/images/480706072_650641861241165_484634563023305956_n.jpg" class="gallery-img" style="height: 400px; object-position: top;" alt="Custom Standee">
+                    <div class="p-3 text-center fw-bold text-dark">Personalized Character Standees</div>
+                </div>
+            </div>
+            
+            <!-- Order Action Card -->
+            <div class="col-md-8 d-flex align-items-stretch">
+                <div class="card w-100 border-danger shadow-sm text-center justify-content-center">
+                    <div class="card-body d-flex flex-column justify-content-center p-5">
+                        <h2 class="text-danger fw-bold mb-3">Ready to Order?</h2>
+                        <p class="text-muted fs-5 mb-4">Visit us at the counter or reach out online with your design ideas, themes, and quantities.</p>
+                        
+                        <!-- Contact Buttons -->
+                        <div class="d-flex flex-column flex-md-row justify-content-center gap-3 mb-4">
+                            <!-- Facebook Button -->
+                            <a href="https://facebook.com/jcmgcs" target="_blank" class="btn btn-outline-primary btn-lg d-flex align-items-center justify-content-center flex-grow-1 shadow-sm">
+                                <!-- Facebook SVG Logo -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="me-2" viewBox="0 0 16 16">
+                                  <path d="M16 8.049c0-4.446-3.582-8.05-8-8.05C3.58 0-.002 3.603-.002 8.05c0 4.017 2.926 7.347 6.75 7.951v-5.625h-2.03V8.05H6.75V6.275c0-2.017 1.195-3.131 3.022-3.131.876 0 1.791.157 1.791.157v1.98h-1.009c-.993 0-1.303.621-1.303 1.258v1.51h2.218l-.354 2.326H9.25V16c3.824-.604 6.75-3.934 6.75-7.951"/>
+                                </svg>
+                                facebook.com
+                            </a>
+                            <!-- Email Button -->
+                            <a href="mailto:wesleyrm04@gmail.com" class="btn btn-outline-dark btn-lg d-flex align-items-center justify-content-center flex-grow-1 shadow-sm">
+                                <!-- Gmail / Envelope SVG Logo -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="me-2" viewBox="0 0 16 16">
+                                  <path d="M.05 3.555A2 2 0 0 1 2 2h12a2 2 0 0 1 1.95 1.555L8 8.414.05 3.555ZM0 4.697v7.104l5.803-3.558L0 4.697ZM6.761 8.83l-6.57 4.027A2 2 0 0 0 2 14h12a2 2 0 0 0 1.808-1.144l-6.57-4.027L8 9.586l-1.239-.757Zm3.436-.586L16 11.801V4.697l-5.803 3.546Z"/>
+                                </svg>
+                                wesleyrm04@gmail.com
+                            </a>
+                        </div>
+
+                        <a href="/" class="btn btn-danger btn-lg w-100 shadow">Return to Main Hub</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

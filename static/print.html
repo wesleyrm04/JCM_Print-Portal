@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JCM Prints and Computer Services Quick Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Added jsPDF for Client-Side PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <script>
+        const RATE_DOC_BW = 3.00;
+        const RATE_DOC_COLOR = 10.00;
+        const TYPING_FEE = 5.00;
+        
+        function getPhotoPaperRate(paperSize, paperType) {
+            if (paperType === 'plain') return paperSize === 'Long' ? 15.00 : 10.00;
+            if (paperType === '110gsm') return 20.00;
+            if (paperType === '180gsm') return 30.00;
+            if (paperType === 'sticker') return 35.00;
+            return 10.00;
+        }
+
+        const LAYOUTS = {
+            'full': { name: 'Full page photo', perPage: 1, cols: 1, rows: 1 },
+            '20x25': { name: '20 x 25 cm. (1)', perPage: 1, cols: 1, rows: 1, pad: '10%' },
+            '13x18': { name: '13 x 18 cm. (2)', perPage: 2, cols: 1, rows: 2, pad: '8%' },
+            '10x15': { name: '10 x 15 cm. (2)', perPage: 2, cols: 1, rows: 2, pad: '15%' },
+            '9x13': { name: '9 x 13 cm. (4)', perPage: 4, cols: 2, rows: 2, pad: '5%' },
+            'wallet': { name: 'Wallet (9)', perPage: 9, cols: 3, rows: 3, pad: '4%' },
+            'contact': { name: 'Contact sheet (35)', perPage: 35, cols: 5, rows: 7, pad: '2%' }
+        };
+    </script>
+    <style>
+        .layout-scroll::-webkit-scrollbar { width: 6px; }
+        .layout-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .paper-A4, .paper-Letter, .paper-Long { background-color: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin: 0 auto; display: grid; gap: 4px; padding: 4px; }
+        .paper-A4 { aspect-ratio: 1 / 1.414; }
+        .paper-Letter { aspect-ratio: 1 / 1.294; }
+        .paper-Long { aspect-ratio: 1 / 1.527; }
+        @media (max-width: 640px) {
+            .paper-A4, .paper-Letter, .paper-Long { max-width: 100% !important; }
+        }
+        .drag-over { background-color: rgba(219, 234, 254, 0.8) !important; border-color: #3b82f6 !important; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen py-4 md:py-8 px-4 flex justify-center items-center">
+
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 md:p-6 border border-gray-200">
+        
+        <div class="text-center mb-6">
+            <h1 class="text-2xl md:text-3xl font-extrabold text-blue-700">&#128424; JCM Prints and Computer Services Quick Portal</h1>
+            <p class="text-gray-500 text-sm mt-1">Send your documents &amp; photos directly to the counter</p>
+        </div>
+
+        <div class="bg-blue-50 border-l-4 border-blue-600 rounded-r-lg p-4 mb-6 shadow-sm">
+            <h2 class="font-bold text-blue-900 text-sm mb-1">&#128161; Printing Rates Summary</h2>
+            <ul class="text-xs text-blue-800 space-y-1.5">
+                <li>&#128196; <strong>Plain Paper Docs:</strong> &#8369;3.00 (B&amp;W) – &#8369;10.00 (Color)</li>
+                <li>&#127912; <strong>Full Color Image (Plain):</strong> &#8369;10 (A4/Letter) / &#8369;15 (Long)</li>
+                <li>&#128444; <strong>Photopaper &amp; Stickers:</strong> 110gsm (&#8369;20), 180gsm (&#8369;30), Sticker (&#8369;35)</li>
+                <li>&#9997; <strong>Typing Service Fee:</strong> &#8369;5.00 base + print pages</li>
+            </ul>
+        </div>
+
+        <form id="orderForm" onsubmit="submitOrder(event)" class="space-y-5">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Your Full Name <span class="text-red-500">*</span></label>
+                <input type="text" id="customerName" required placeholder="e.g. Juan Dela Cruz" class="w-full border border-gray-300 rounded-lg p-3.5 md:p-3 text-gray-800 focus:ring-2 focus:ring-blue-500 text-base">
+            </div>
+
+            <div id="standardOptionsContainer">
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Document Request Type</label>
+                <select id="presetRequest" onchange="handlePresetChange()" class="w-full border border-gray-300 rounded-lg p-3.5 md:p-3 text-gray-800 bg-white focus:ring-2 focus:ring-blue-500 text-base">
+                    <option value="Standard Document Print">&#128196; Standard Document Print (Auto-Detect)</option>
+                    <option value="Rush ID - Package A (6pcs 1x1)">&#127383; Rush ID - Package A (6pcs 1x1 - &#8369;20)</option>
+                    <option value="Rush ID - Package B (3pcs 2x2)">&#127383; Rush ID - Package B (3pcs 2x2 - &#8369;25)</option>
+                    <option value="Rush ID - Package C (2pcs 2x2 + 4pcs 1x1)">&#127383; Rush ID - Package C (2pcs 2x2 + 4pcs 1x1 - &#8369;30)</option>
+                    <option value="Photo Print Layout">&#128444; Custom Photo Print Layout (Windows Style)</option>
+                </select>
+            </div>
+
+            <div id="colorModeContainer" class="hidden">
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Document Color Options</label>
+                <select id="colorMode" onchange="calculateEstimate()" class="w-full border border-gray-300 rounded-lg p-3.5 md:p-3 text-gray-800 bg-white text-base">
+                    <option value="auto">Smart Auto-Detect (&#8369;3 B&amp;W / &#8369;10 Color)</option>
+                    <option value="force_bw">Force Black &amp; White (&#8369;3.00 / page)</option>
+                    <option value="force_color">Force Full Color (&#8369;10.00 / page)</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Select File(s) or Photo(s) <span class="text-red-500">*</span></label>
+                <div id="dropZone" class="border-2 border-dashed border-blue-400 rounded-xl p-8 text-center bg-blue-50/50 cursor-pointer hover:bg-blue-100/50 transition" onclick="document.getElementById('fileInput').click()">
+                    <div class="text-4xl mb-3">&#128193;</div>
+                    <p class="text-blue-800 font-semibold text-sm">Tap or Drag & Drop to choose single or multiple files</p>
+                    <p class="text-xs text-gray-500 mt-2">If you upload images, the Photo Layout studio will open automatically.</p>
+                    <input type="file" id="fileInput" multiple class="hidden" onchange="handleFilesSelected(event)">
+                </div>
+                <div id="fileListDisplay" class="mt-4 space-y-2 text-sm text-gray-700 font-medium"></div>
+            </div>
+
+            <div id="estimateBox" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                <div class="flex-1 pr-2">
+                    <p class="text-sm text-amber-800 font-bold mb-1">?? PRINTING ESTIMATE</p>
+                    <div class="text-xs text-amber-700 space-y-0.5 whitespace-pre-line" id="estimateDetails">Calculating...</div>
+                </div>
+                <div class="text-right shrink-0">
+                    <p class="text-xs text-amber-600 font-semibold uppercase tracking-wider mb-1">Est. Total</p>
+                    <span class="text-2xl font-extrabold text-green-700" id="estimateTotal">?0.00</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Instructions / Notes (Optional)</label>
+                <textarea id="instructions" rows="2" class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+
+            <div>
+                <button type="button" onclick="openDocModal()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl transition shadow-md flex items-center justify-center space-x-2 text-base">
+                    <span>&#128221;</span> <span>Type &amp; Generate Document</span>
+                </button>
+            </div>
+
+            <div class="relative">
+                <div id="uploadProgressContainer" class="hidden absolute inset-0 bg-blue-100 rounded-xl overflow-hidden pointer-events-none">
+                    <div id="uploadProgressBar" class="h-full bg-blue-200 transition-all duration-300 w-0"></div>
+                </div>
+                <button type="submit" id="btnSubmit" class="w-full relative z-10 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl transition shadow-lg text-lg flex justify-center items-center">
+                    <span id="btnSubmitText">&#128640; Upload &amp; Send to Counter</span>
+                </button>
+            </div>
+        </form>
+
+        <div id="statusMessage" class="hidden mt-6 text-center"></div>
+    </div>
+
+    <!-- WINDOWS PRINT PICTURES MODAL -->
+    <div id="windowsPrintModal" class="fixed inset-0 bg-black/90 backdrop-blur-sm hidden flex items-center justify-center p-2 md:p-6 z-50">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[95vh] md:h-[90vh] flex flex-col overflow-hidden">
+            <div class="bg-blue-50 px-4 md:px-6 py-4 border-b flex justify-between items-center shrink-0">
+                <div class="flex items-center space-x-3">
+                    <span class="text-2xl">&#128444;</span>
+                    <h2 class="text-lg md:text-xl font-semibold text-blue-900">Print Pictures</h2>
+                </div>
+                <h3 class="text-lg text-blue-700 font-medium hidden md:block">How do you want to print your pictures?</h3>
+                <button type="button" onclick="closePhotoModal(false)" class="text-gray-500 hover:text-red-500 font-bold text-3xl leading-none">&times;</button>
+            </div>
+
+            <div class="px-4 md:px-6 py-3 border-b bg-gray-50 flex flex-wrap gap-4 text-sm shrink-0 items-end">
+                <div class="flex-1 min-w-[120px]">
+                    <label class="block text-xs text-gray-500 mb-1 font-semibold">Paper size:</label>
+                    <select id="winPaperSize" onchange="renderPreview()" class="w-full border border-gray-300 rounded p-2 text-base md:text-sm">
+                        <option value="A4">A4 (210 x 297 mm)</option>
+                        <option value="Letter">Letter (8.5 x 11 in)</option>
+                        <option value="Long">Long / Folio (8.5 x 13 in)</option>
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[150px]">
+                    <label class="block text-xs text-gray-500 mb-1 font-semibold">Paper type:</label>
+                    <select id="winPaperType" onchange="renderPreview()" class="w-full border border-gray-300 rounded p-2 text-base md:text-sm">
+                        <option value="plain">Plain Paper (Full Color)</option>
+                        <option value="110gsm">Photopaper (110gsm)</option>
+                        <option value="180gsm">Photopaper (180gsm)</option>
+                        <option value="sticker">Photo Sticker Paper</option>
+                    </select>
+                </div>
+                <div class="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-bold border border-blue-200 text-center w-full md:w-auto">
+                    Est: <span id="winPricePreview">?0.00</span>
+                </div>
+            </div>
+
+            <div class="flex-1 flex flex-col md:flex-row overflow-hidden bg-gray-200">
+                <div class="flex-1 flex flex-col p-2 md:p-4 overflow-y-auto items-center justify-center relative">
+                    <div id="virtualPaper" class="paper-A4 w-full max-w-[400px] max-h-full transition-all duration-300"></div>
+                    <div class="mt-4 flex items-center space-x-4 bg-white/90 px-5 py-2 rounded-full shadow-lg backdrop-blur">
+                        <button type="button" onclick="prevPage()" class="text-blue-600 font-bold hover:text-blue-800 p-2 text-lg leading-none">&lsaquo;</button>
+                        <span class="text-sm font-medium text-gray-700">Page <span id="winCurrPage">1</span> of <span id="winTotalPages">1</span></span>
+                        <button type="button" onclick="nextPage()" class="text-blue-600 font-bold hover:text-blue-800 p-2 text-lg leading-none">&rsaquo;</button>
+                    </div>
+                </div>
+                <div class="w-full md:w-48 bg-white border-t md:border-l md:border-t-0 overflow-x-auto md:overflow-y-auto layout-scroll shrink-0 py-2 flex md:block">
+                    <div id="layoutList" class="flex md:block space-x-2 md:space-x-0 md:space-y-1 px-2 md:px-0"></div>
+                </div>
+            </div>
+
+            <div class="px-4 md:px-6 py-4 bg-gray-50 border-t flex flex-col md:flex-row justify-between items-center shrink-0 gap-4">
+                <div class="flex items-center space-x-6 w-full md:w-auto justify-between md:justify-start">
+                    <div class="flex items-center space-x-3">
+                        <label class="text-sm font-semibold text-gray-700">Copies of each:</label>
+                        <input type="number" id="winCopies" value="1" min="1" max="100" onchange="renderPreview()" class="w-20 border border-gray-300 rounded p-2 text-center text-base">
+                    </div>
+                    <label class="flex items-center space-x-2 cursor-pointer p-2">
+                        <input type="checkbox" id="winFit" checked onchange="renderPreview()" class="rounded text-blue-600 w-5 h-5">
+                        <span class="text-sm font-semibold text-gray-700">Fit picture to frame</span>
+                    </label>
+                </div>
+                <div class="space-x-3 w-full md:w-auto flex justify-end">
+                    <button type="button" onclick="closePhotoModal(false)" class="flex-1 md:flex-none px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-100 text-sm font-semibold">Cancel</button>
+                    <!-- Launches PDF preview generation -->
+                    <button type="button" id="btnApplyLayout" onclick="generateAndPreviewPDF()" class="flex-1 md:flex-none px-8 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow text-sm">Preview PDF</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW PDF PREVIEW MODAL -->
+    <div id="pdfPreviewModal" class="fixed inset-0 bg-black/90 backdrop-blur-sm hidden flex items-center justify-center p-2 md:p-6 z-[60]">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[95vh] md:h-[90vh] flex flex-col overflow-hidden">
+            <div class="bg-blue-50 px-4 md:px-6 py-4 border-b flex justify-between items-center shrink-0">
+                <div class="flex items-center space-x-3">
+                    <span class="text-2xl">&#128196;</span>
+                    <h2 class="text-lg md:text-xl font-semibold text-blue-900">PDF Layout Preview</h2>
+                </div>
+                <button type="button" onclick="cancelPdfPreview()" class="text-gray-500 hover:text-red-500 font-bold text-3xl leading-none">&times;</button>
+            </div>
+            
+            <div class="flex-1 bg-gray-200 overflow-hidden relative">
+                <iframe id="pdfPreviewFrame" class="w-full h-full border-0"></iframe>
+            </div>
+
+            <div class="px-4 md:px-6 py-4 bg-gray-50 border-t flex flex-col md:flex-row justify-end items-center shrink-0 gap-3">
+                <button type="button" onclick="cancelPdfPreview()" class="w-full md:w-auto px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-100 text-sm font-semibold">Back to Settings</button>
+                <button type="button" onclick="confirmPdfPreview()" class="w-full md:w-auto px-8 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold shadow text-sm">Confirm & Attach to Order</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DOCUMENT GENERATOR MODAL -->
+    <div id="docModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-[60]">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="font-bold text-xl text-gray-800">&#128221; Document Creator</h3>
+                <button type="button" onclick="closeDocModal()" class="text-gray-400 hover:text-gray-600 font-bold text-2xl leading-none">&times;</button>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-semibold mb-1">Your Full Name <span class="text-red-500">*</span></label>
+                <input type="text" id="docModalName" class="w-full border rounded-lg p-3 text-base">
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1">Document Content (Text) <span class="text-red-500">*</span></label>
+                <textarea id="docModalContent" rows="7" oninput="calculateDocModal()" class="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-emerald-500"></textarea>
+            </div>
+
+            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                <div>
+                    <p class="text-xs text-emerald-800 font-bold uppercase tracking-wider mb-1">Typing + Print Est.</p>
+                    <p class="text-xs text-emerald-700" id="docModalBreakdown">?5.00 base + pages</p>
+                </div>
+                <span class="text-2xl font-extrabold text-emerald-700" id="docModalTotal">?5.00</span>
+            </div>
+
+            <div class="flex space-x-3 pt-3">
+                <button type="button" onclick="closeDocModal()" class="w-1/2 bg-gray-200 text-gray-700 font-bold py-3 rounded-xl">Cancel</button>
+                <button type="button" onclick="submitDoc()" class="w-1/2 bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-md text-lg">?? Generate</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let uploadedImages = [];
+        let uploadedFilesRaw = [];
+        let isPhotoWorkflow = false;
+        let photoConfig = {};
+        
+        let docPagesAnalyzed = 1;
+        let analyzedBwPages = 1;
+        let analyzedColorPages = 0;
+
+        let currentLayoutKey = 'full';
+        let currentPreviewPage = 1;
+        let totalPreviewPages = 1;
+
+        // New state for generated PDF layout
+        let generatedLayoutPdfBlob = null;
+        let generatedLayoutPdfUrl = null;
+
+        // Setup Drag and Drop
+        const dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                processFiles(Array.from(e.dataTransfer.files));
+            }
+        });
+
+        function initLayoutMenu() {
+            const list = document.getElementById('layoutList');
+            list.innerHTML = '';
+            for (const [key, data] of Object.entries(LAYOUTS)) {
+                const div = document.createElement('div');
+                div.className = `p-3 min-w-[100px] text-center cursor-pointer border-b md:border-b-0 md:border-l hover:bg-blue-50 transition ${key === currentLayoutKey ? 'bg-blue-100 border-blue-500' : 'border-transparent'}`;
+                if (window.innerWidth >= 768) {
+                    div.className = `p-3 text-center cursor-pointer border-b hover:bg-blue-50 transition ${key === currentLayoutKey ? 'bg-blue-100 border-l-4 border-blue-500' : 'border-l-4 border-transparent'}`;
+                } else {
+                    div.className = `p-3 flex-shrink-0 w-24 text-center cursor-pointer border-b-4 hover:bg-blue-50 transition ${key === currentLayoutKey ? 'bg-blue-100 border-blue-500' : 'border-transparent'}`;
+                }
+                div.onclick = () => { currentLayoutKey = key; initLayoutMenu(); renderPreview(); };
+                div.innerHTML = `<div class="w-12 h-16 md:w-16 md:h-20 bg-white border border-gray-300 shadow-sm mx-auto mb-2 flex items-center justify-center p-1"><div class="w-full h-full border border-dashed border-gray-400 bg-gray-100 text-[10px] text-gray-400 flex items-center justify-center">${data.perPage}</div></div><p class="text-xs text-gray-700 font-medium">${data.name}</p>`;
+                list.appendChild(div);
+            }
+        }
+
+        function handlePresetChange() {
+            calculateEstimate();
+        }
+
+        function handleFilesSelected(event) {
+            const input = document.getElementById('fileInput');
+            if (input.files.length > 0) {
+                processFiles(Array.from(input.files));
+                input.value = ""; 
+            }
+        }
+
+        async function processFiles(newFiles) {
+            uploadedFilesRaw = uploadedFilesRaw.concat(newFiles);
+            generatedLayoutPdfBlob = null; // Clear prev generated layout if files change
+            await updateFileState();
+        }
+
+        function removeFile(index) {
+            uploadedFilesRaw.splice(index, 1);
+            generatedLayoutPdfBlob = null; // Clear prev generated layout if files change
+            updateFileState();
+        }
+
+        async function updateFileState() {
+            const display = document.getElementById('fileListDisplay');
+            const estimateBox = document.getElementById('estimateBox');
+            const cModeBox = document.getElementById('colorModeContainer');
+            
+            uploadedImages.forEach(url => URL.revokeObjectURL(url));
+            uploadedImages = [];
+            display.innerHTML = "";
+
+            if (uploadedFilesRaw.length === 0) {
+                estimateBox.classList.add('hidden');
+                cModeBox.classList.add('hidden');
+                isPhotoWorkflow = false;
+                return;
+            }
+
+            let hasImage = false;
+            let hasPdf = false;
+            display.innerHTML = `<p class="font-bold text-gray-800 mb-2">Selected Files (${uploadedFilesRaw.length}):</p>`;
+
+            uploadedFilesRaw.forEach((f, index) => {
+                const item = document.createElement('div');
+                item.className = "flex items-center justify-between bg-white border border-gray-200 rounded-lg p-2 shadow-sm";
+                
+                let iconHtml = `<span class="text-xl mr-2">&#128206;</span>`;
+                if (f.type.startsWith('image/')) {
+                    hasImage = true;
+                    const objectUrl = URL.createObjectURL(f);
+                    uploadedImages.push(objectUrl);
+                    iconHtml = `<img src="${objectUrl}" class="w-8 h-8 object-cover rounded mr-3 border border-gray-200">`;
+                }
+                if (f.name.toLowerCase().endsWith('.pdf')) hasPdf = true;
+
+                item.innerHTML = `
+                    <div class="flex items-center overflow-hidden flex-1">
+                        ${iconHtml}
+                        <div class="truncate flex-1">
+                            <p class="truncate text-sm font-semibold text-gray-800">${f.name}</p>
+                            <p class="text-[10px] text-gray-500 uppercase">${(f.size/1024/1024).toFixed(2)} MB</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="removeFile(${index})" class="ml-3 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Remove File">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                    </button>
+                `;
+                display.appendChild(item);
+            });
+
+            let preset = document.getElementById('presetRequest').value;
+
+            if (hasImage && !hasPdf) {
+                cModeBox.classList.add('hidden');
+                
+                if (preset.includes("Standard Document")) {
+                    document.getElementById('presetRequest').value = "Photo Print Layout";
+                    preset = "Photo Print Layout";
+                }
+
+                if (preset.includes("Rush ID")) {
+                    isPhotoWorkflow = false; 
+                    calculateEstimate();
+                } else if (preset.includes("Photo Print Layout")) {
+                    isPhotoWorkflow = true;
+                    initLayoutMenu();
+                    currentPreviewPage = 1;
+                    document.getElementById('windowsPrintModal').classList.remove('hidden');
+                    renderPreview();
+                }
+            } else {
+                isPhotoWorkflow = false;
+                cModeBox.classList.remove('hidden');
+                docPagesAnalyzed = uploadedFilesRaw.length;
+                analyzedBwPages = uploadedFilesRaw.length;
+                analyzedColorPages = 0;
+
+                if (hasPdf) {
+                    estimateBox.classList.remove('hidden');
+                    document.getElementById('estimateDetails').innerText = "? Scanning document pages & colors...";
+                    document.getElementById('estimateTotal').innerText = "...";
+                    
+                    const fd = new FormData();
+                    const firstPdf = uploadedFilesRaw.find(f => f.name.toLowerCase().endsWith('.pdf'));
+                    if(firstPdf) {
+                        fd.append("file", firstPdf); 
+                        try {
+                            const res = await fetch('/api/estimate', { method: 'POST', body: fd });
+                            if (res.ok) {
+                                const data = await res.json();
+                                docPagesAnalyzed = data.page_count;
+                                analyzedBwPages = data.bw_pages;
+                                analyzedColorPages = data.color_pages;
+                            }
+                        } catch (e) {}
+                    }
+                }
+                calculateEstimate();
+            }
+        }
+
+        function calculateEstimate() {
+            const preset = document.getElementById('presetRequest').value;
+            const cMode = document.getElementById('colorMode').value;
+            let total = 0;
+            let labelText = "";
+
+            if (uploadedFilesRaw.length === 0 && !document.getElementById('docModalContent').value) {
+                document.getElementById('estimateBox').classList.add('hidden');
+                return;
+            }
+
+            if (preset.includes("Package A")) {
+                let sets = uploadedFilesRaw.length > 0 ? uploadedFilesRaw.length : 1;
+                total = sets * 20.00;
+                labelText = `Rush ID Package A\n${sets} image(s) ? ${sets} set(s)\n?20.00 per set`;
+            } else if (preset.includes("Package B")) {
+                let sets = uploadedFilesRaw.length > 0 ? uploadedFilesRaw.length : 1;
+                total = sets * 25.00;
+                labelText = `Rush ID Package B\n${sets} image(s) ? ${sets} set(s)\n?25.00 per set`;
+            } else if (preset.includes("Package C")) {
+                let sets = uploadedFilesRaw.length > 0 ? uploadedFilesRaw.length : 1;
+                total = sets * 30.00;
+                labelText = `Rush ID Package C\n${sets} image(s) ? ${sets} set(s)\n?30.00 per set`;
+            } else if (isPhotoWorkflow && photoConfig.layout) {
+                total = photoConfig.total;
+                labelText = `PHOTO PRINT SETTINGS:\nPaper Size: ${photoConfig.pSize}\nPaper Type: ${photoConfig.pType}\nLayout: ${photoConfig.layout}\nCopies: ${photoConfig.copies}\nPages: ${photoConfig.totalPreviewPages}`;
+                if (generatedLayoutPdfBlob) {
+                    labelText += `\n(? Generated PDF Attached)`;
+                }
+            } else if (!isPhotoWorkflow && preset.includes("Standard Document Print")) {
+                if (cMode === 'force_bw') {
+                    total = docPagesAnalyzed * RATE_DOC_BW;
+                    labelText = `B&W Pages: ${docPagesAnalyzed} × ?3.00`;
+                } else if (cMode === 'force_color') {
+                    total = docPagesAnalyzed * RATE_DOC_COLOR;
+                    labelText = `Color Pages: ${docPagesAnalyzed} × ?10.00`;
+                } else {
+                    total = (analyzedBwPages * RATE_DOC_BW) + (analyzedColorPages * RATE_DOC_COLOR);
+                    labelText = `B&W Pages: ${analyzedBwPages} × ?3.00\nColor Pages: ${analyzedColorPages} × ?10.00`;
+                }
+            } else {
+                labelText = "Select layout logic...";
+            }
+
+            document.getElementById('estimateDetails').innerText = labelText;
+            document.getElementById('estimateTotal').innerText = "?" + total.toFixed(2);
+            document.getElementById('estimateBox').classList.remove('hidden');
+        }
+
+        function renderPreview() {
+            const paper = document.getElementById('virtualPaper');
+            const pSize = document.getElementById('winPaperSize').value;
+            const pType = document.getElementById('winPaperType').value;
+            const copies = parseInt(document.getElementById('winCopies').value) || 1;
+            const fit = document.getElementById('winFit').checked;
+            const layout = LAYOUTS[currentLayoutKey];
+            
+            paper.className = `w-full max-w-[400px] max-h-full transition-all duration-300 paper-${pSize}`;
+            paper.style.gridTemplateColumns = `repeat(${layout.cols}, 1fr)`;
+            paper.style.gridTemplateRows = `repeat(${layout.rows}, 1fr)`;
+            paper.style.padding = layout.pad || '4px';
+
+            const totalImageInstances = uploadedImages.length * copies;
+            totalPreviewPages = Math.ceil(totalImageInstances / layout.perPage) || 1;
+            if (currentPreviewPage > totalPreviewPages) currentPreviewPage = totalPreviewPages;
+            if (currentPreviewPage < 1) currentPreviewPage = 1;
+
+            document.getElementById('winTotalPages').innerText = totalPreviewPages;
+            document.getElementById('winCurrPage').innerText = currentPreviewPage;
+
+            const startIndex = (currentPreviewPage - 1) * layout.perPage;
+            const endIndex = startIndex + layout.perPage;
+            let allInstances = [];
+            for (let url of uploadedImages) { for (let i=0; i<copies; i++) allInstances.push(url); }
+            const pageInstances = allInstances.slice(startIndex, endIndex);
+
+            paper.innerHTML = '';
+            for (let i = 0; i < layout.perPage; i++) {
+                const slot = document.createElement('div');
+                slot.className = "w-full h-full border border-dashed border-gray-300 flex items-center justify-center bg-gray-50 overflow-hidden";
+                if (pageInstances[i]) {
+                    const img = document.createElement('img');
+                    img.src = pageInstances[i];
+                    img.className = `w-full h-full ${fit ? 'object-cover' : 'object-contain'}`;
+                    slot.appendChild(img);
+                }
+                paper.appendChild(slot);
+            }
+
+            const baseRate = getPhotoPaperRate(pSize, pType);
+            document.getElementById('winPricePreview').innerText = "?" + (totalPreviewPages * baseRate).toFixed(2);
+        }
+
+        function prevPage() { if (currentPreviewPage > 1) { currentPreviewPage--; renderPreview(); } }
+        function nextPage() { if (currentPreviewPage < totalPreviewPages) { currentPreviewPage++; renderPreview(); } }
+
+        function closePhotoModal(save) {
+            document.getElementById('windowsPrintModal').classList.add('hidden');
+            if (save) {
+                photoConfig = {
+                    pSize: document.getElementById('winPaperSize').value,
+                    pType: document.getElementById('winPaperType').value,
+                    copies: document.getElementById('winCopies').value,
+                    fit: document.getElementById('winFit').checked,
+                    layout: LAYOUTS[currentLayoutKey].name,
+                    totalPreviewPages: totalPreviewPages,
+                    total: totalPreviewPages * getPhotoPaperRate(document.getElementById('winPaperSize').value, document.getElementById('winPaperType').value)
+                };
+                calculateEstimate();
+            } else if (isPhotoWorkflow) {
+                isPhotoWorkflow = false;
+                calculateEstimate();
+            }
+        }
+
+        // ==========================================
+        // Client-side PDF Generation Logic
+        // ==========================================
+
+        async function getProcessedImageData(url, cellW_mm, cellH_mm, fit) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    // ~11.81 pixels per mm for standard internal resolution
+                    const scale = 11.81; 
+                    const cW = Math.floor(cellW_mm * scale);
+                    const cH = Math.floor(cellH_mm * scale);
+                    
+                    const canvas = document.createElement("canvas");
+                    canvas.width = cW;
+                    canvas.height = cH;
+                    const ctx = canvas.getContext("2d");
+                    
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillRect(0, 0, cW, cH);
+                    
+                    const imgRatio = img.width / img.height;
+                    const cellRatio = cW / cH;
+                    
+                    let drawW = cW, drawH = cH, dx = 0, dy = 0;
+                    
+                    if (fit) { // CSS object-cover equivalent
+                        if (imgRatio > cellRatio) {
+                            drawH = cH;
+                            drawW = cH * imgRatio;
+                            dx = (cW - drawW) / 2;
+                        } else {
+                            drawW = cW;
+                            drawH = cW / imgRatio;
+                            dy = (cH - drawH) / 2;
+                        }
+                    } else { // CSS object-contain equivalent
+                        if (imgRatio > cellRatio) {
+                            drawW = cW;
+                            drawH = cW / imgRatio;
+                            dy = (cH - drawH) / 2;
+                        } else {
+                            drawH = cH;
+                            drawW = cH * imgRatio;
+                            dx = (cW - drawW) / 2;
+                        }
+                    }
+                    
+                    ctx.drawImage(img, dx, dy, drawW, drawH);
+                    resolve(canvas.toDataURL("image/jpeg", 0.95)); 
+                };
+                img.src = url;
+            });
+        }
+
+        async function generateAndPreviewPDF() {
+            if (!window.jspdf) {
+                alert("PDF engine is still loading. Please try again in a moment.");
+                return;
+            }
+
+            const btn = document.getElementById('btnApplyLayout');
+            const origText = btn.innerHTML;
+            btn.innerHTML = "? Generating PDF...";
+            btn.disabled = true;
+
+            try {
+                const { jsPDF } = window.jspdf;
+                
+                let pWidth = 210, pHeight = 297; 
+                const pSize = document.getElementById('winPaperSize').value;
+                if (pSize === 'Letter') { pWidth = 215.9; pHeight = 279.4; }
+                if (pSize === 'Long') { pWidth = 215.9; pHeight = 330.2; }
+                
+                const layout = LAYOUTS[currentLayoutKey];
+                const copies = parseInt(document.getElementById('winCopies').value) || 1;
+                const fit = document.getElementById('winFit').checked;
+                
+                const doc = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'mm',
+                    format: [pWidth, pHeight]
+                });
+                
+                let allInstances = [];
+                for (let url of uploadedImages) {
+                    for (let i=0; i<copies; i++) allInstances.push(url);
+                }
+                
+                const cellW = pWidth / layout.cols;
+                const cellH = pHeight / layout.rows;
+                
+                // Calculate padding in mm based on layout percentage
+                let padMultiplier = 0.04;
+                if (layout.pad && layout.pad.includes('%')) {
+                    padMultiplier = parseInt(layout.pad) / 100;
+                }
+                const padX = pWidth * padMultiplier; 
+                const padY = padX; // Keep proportional 
+
+                let currentItem = 0;
+                let pageNum = 1;
+                
+                while(currentItem < allInstances.length) {
+                    if (pageNum > 1) doc.addPage();
+                    
+                    for (let r = 0; r < layout.rows; r++) {
+                        for (let c = 0; c < layout.cols; c++) {
+                            if (currentItem >= allInstances.length) break;
+                            
+                            const imgUrl = allInstances[currentItem];
+                            const actualCellW = cellW - (padX * 2);
+                            const actualCellH = cellH - (padY * 2);
+                            
+                            const base64Data = await getProcessedImageData(imgUrl, actualCellW, actualCellH, fit);
+                            
+                            const x = (c * cellW) + padX;
+                            const y = (r * cellH) + padY;
+                            
+                            doc.addImage(base64Data, 'JPEG', x, y, actualCellW, actualCellH, undefined, 'FAST');
+                            currentItem++;
+                        }
+                    }
+                    pageNum++;
+                }
+                
+                generatedLayoutPdfBlob = doc.output('blob');
+                if(generatedLayoutPdfUrl) URL.revokeObjectURL(generatedLayoutPdfUrl);
+                generatedLayoutPdfUrl = URL.createObjectURL(generatedLayoutPdfBlob);
+                
+                document.getElementById('pdfPreviewFrame').src = generatedLayoutPdfUrl + "#toolbar=0";
+                document.getElementById('pdfPreviewModal').classList.remove('hidden');
+                
+            } catch(e) {
+                alert("Error generating PDF preview.");
+                console.error(e);
+            } finally {
+                btn.innerHTML = origText;
+                btn.disabled = false;
+            }
+        }
+
+        function confirmPdfPreview() {
+            document.getElementById('pdfPreviewModal').classList.add('hidden');
+            closePhotoModal(true); 
+        }
+
+        function cancelPdfPreview() {
+            document.getElementById('pdfPreviewModal').classList.add('hidden');
+            generatedLayoutPdfBlob = null; 
+        }
+
+        // ==========================================
+        // END PDF Logic
+        // ==========================================
+
+        function openDocModal() { document.getElementById('docModal').classList.remove('hidden'); calculateDocModal(); }
+        function closeDocModal() { document.getElementById('docModal').classList.add('hidden'); }
+        function calculateDocModal() {
+            const text = document.getElementById('docModalContent').value;
+            const pgs = Math.max(1, Math.ceil(text.length / 2000));
+            document.getElementById('docModalBreakdown').innerText = `?5.00 Typing + ${pgs} page(s) @ ?3.00`;
+            document.getElementById('docModalTotal').innerText = "?" + (TYPING_FEE + (pgs * RATE_DOC_BW)).toFixed(2);
+        }
+
+        function buildOrderMeta(preset) {
+            let meta = {
+                "status": "Pending",
+                "preset_request": preset,
+                "total_files": uploadedFilesRaw.length,
+                "files": uploadedFilesRaw.map(f => f.name)
+            };
+
+            if (isPhotoWorkflow && photoConfig.layout) {
+                meta.paper_size = photoConfig.pSize;
+                meta.paper_type = photoConfig.pType;
+                meta.copies = photoConfig.copies;
+                meta.fit_setting = photoConfig.fit;
+                meta.layout = photoConfig.layout;
+                meta.estimated_pages = photoConfig.totalPreviewPages;
+                meta.estimated_total = photoConfig.total;
+            } else if (preset.includes("Standard Document Print")) {
+                meta.color_mode = document.getElementById('colorMode').value;
+                meta.page_count = docPagesAnalyzed;
+                meta.bw_pages = analyzedBwPages;
+                meta.color_pages = analyzedColorPages;
+                
+                let cMode = meta.color_mode;
+                if (cMode === 'force_bw') {
+                    meta.estimated_total = docPagesAnalyzed * RATE_DOC_BW;
+                } else if (cMode === 'force_color') {
+                    meta.estimated_total = docPagesAnalyzed * RATE_DOC_COLOR;
+                } else {
+                    meta.estimated_total = (analyzedBwPages * RATE_DOC_BW) + (analyzedColorPages * RATE_DOC_COLOR);
+                }
+            } else if (preset.includes("Rush ID")) {
+                meta.package_selected = preset;
+            }
+            return meta;
+        }
+
+        async function submitDoc() {
+            const name = document.getElementById('docModalName').value.trim();
+            const content = document.getElementById('docModalContent').value.trim();
+            if (!name || !content) return alert("Fill in Name and Text.");
+
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const file = new File([blob], "Generated_Doc_Arial11.txt", { type: 'text/plain' });
+            const fd = new FormData();
+            fd.append("customer_name", name);
+            fd.append("preset_request", "Generated Document (Arial 11 A4)");
+            fd.append("instructions", "Charge includes ?5 typing fee.");
+            fd.append("files", file);
+
+            const pgs = Math.max(1, Math.ceil(content.length / 2000));
+            const meta = {
+                status: "Pending",
+                preset_request: "Generated Document",
+                typing_fee: TYPING_FEE,
+                pages: pgs,
+                estimated_total: TYPING_FEE + (pgs * RATE_DOC_BW),
+                files: ["Generated_Doc_Arial11.txt"]
+            };
+            fd.append("order_meta", JSON.stringify(meta));
+
+            try {
+                const res = await fetch('/api/submit_order', { method: 'POST', body: fd });
+                if (res.ok) { 
+                    const data = await res.json();
+                    closeDocModal(); 
+                    alert(`? Document Sent! Order Ref: ${data.order_id}`); 
+                } else {
+                    const err = await res.json();
+                    alert(`Upload Error: ${err.detail || 'Unknown error'}`);
+                }
+            } catch (e) { alert("Network Error"); }
+        }
+
+        function submitOrder(e) {
+            e.preventDefault();
+            const name = document.getElementById('customerName').value.trim();
+            let req = document.getElementById('presetRequest').value;
+            let inst = document.getElementById('instructions').value.trim();
+            const btnText = document.getElementById('btnSubmitText');
+            const btn = document.getElementById('btnSubmit');
+            const pBarContainer = document.getElementById('uploadProgressContainer');
+            const pBar = document.getElementById('uploadProgressBar');
+
+            if (!name || uploadedFilesRaw.length === 0) return alert("Fill name and select files.");
+
+            const orderMeta = buildOrderMeta(req);
+
+            if (isPhotoWorkflow && photoConfig.layout) {
+                req = `Windows Photo Layout: ${photoConfig.layout}`;
+                inst = `[PHOTO CONFIG] Paper: ${photoConfig.pSize}, Type: ${photoConfig.pType}, Copies: ${photoConfig.copies}, Fit: ${photoConfig.fit ? 'Yes':'No'}, Estimated Pages: ${photoConfig.totalPreviewPages}. \n\nAdditional Notes: ${inst}`;
+            } else if (!isPhotoWorkflow && req.includes("Standard Document Print")) {
+                const cMode = document.getElementById('colorMode').value;
+                inst = `[DOCUMENT CONFIG] Color Selection: ${cMode}. \n\nAdditional Notes: ${inst}`;
+            }
+
+            const fd = new FormData();
+            fd.append("customer_name", name);
+            fd.append("preset_request", req);
+            fd.append("instructions", inst);
+            fd.append("order_meta", JSON.stringify(orderMeta));
+            
+            // Append Raw Files
+            for (let f of uploadedFilesRaw) {
+                fd.append("files", f);
+            }
+
+            // Append the generated Layout PDF if it exists
+            if (isPhotoWorkflow && generatedLayoutPdfBlob) {
+                fd.append("files", generatedLayoutPdfBlob, "Generated_Photo_Layout.pdf");
+            }
+
+            btn.disabled = true; 
+            btnText.innerHTML = "? Uploading... <span id='uploadPercent'>0%</span>";
+            pBarContainer.classList.remove('hidden');
+            pBar.style.width = '0%';
+            document.getElementById('statusMessage').classList.add('hidden');
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/submit_order', true);
+
+            xhr.upload.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const percentComplete = Math.round((event.loaded / event.total) * 100);
+                    pBar.style.width = percentComplete + '%';
+                    const percentEl = document.getElementById('uploadPercent');
+                    if (percentEl) percentEl.innerText = percentComplete + '%';
+                    
+                    if (percentComplete === 100) {
+                        btnText.innerText = "? Processing order...";
+                    }
+                }
+            };
+
+            xhr.onload = function() {
+                btn.disabled = false;
+                btnText.innerHTML = "&#128640; Upload & Send to Counter";
+                pBarContainer.classList.add('hidden');
+
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    const res = JSON.parse(xhr.responseText);
+                    document.getElementById('orderForm').reset();
+                    document.getElementById('fileListDisplay').innerHTML = "";
+                    document.getElementById('estimateBox').classList.add('hidden');
+                    document.getElementById('colorModeContainer').classList.add('hidden');
+                    isPhotoWorkflow = false;
+                    uploadedFilesRaw = [];
+                    generatedLayoutPdfBlob = null;
+                    
+                    document.getElementById('statusMessage').innerHTML = `
+                        <div class="bg-green-50 border-2 border-green-400 rounded-2xl p-6 text-green-900 shadow-md">
+                            <div class="text-5xl mb-3">&#9989;</div>
+                            <h3 class="font-black text-2xl mb-1">Upload Successful!</h3>
+                            
+                            <div class="bg-white rounded-lg border border-green-200 p-4 my-4 shadow-sm inline-block min-w-[200px]">
+                                <p class="text-xs text-green-600 font-bold uppercase tracking-wider mb-1">Order Reference</p>
+                                <p class="text-2xl font-mono font-bold text-gray-800">${res.order_id}</p>
+                            </div>
+
+                            <p class="text-sm font-semibold mt-2">Please proceed to the counter.</p>
+                        </div>
+                    `;
+                    document.getElementById('statusMessage').classList.remove('hidden');
+                } else {
+                    let err = "Network error";
+                    try { err = JSON.parse(xhr.responseText).detail || xhr.responseText; } catch(e){}
+                    alert("Upload Failed: " + err);
+                }
+            };
+
+            xhr.onerror = function() {
+                btn.disabled = false;
+                btnText.innerHTML = "&#128640; Upload & Send to Counter";
+                pBarContainer.classList.add('hidden');
+                alert("Network error occurred during upload.");
+            };
+
+            xhr.send(fd);
+        }
+    </script>
+</body>
+</html>
