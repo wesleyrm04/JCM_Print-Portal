@@ -48,6 +48,41 @@ Phones often say "No internet - stay connected?". Customers must tap *Stay conne
 explains this). If the page will not load, turning off mobile data for a moment fixes it.
 I could not test your specific Piso WiFi software - step 2 is the part to check on your side.
 
+## 3b. Also publishing through Cloudflare Tunnel (linkora.top)
+
+The same server can be used two ways at once:
+
+| Who | Opens | Needs internet? |
+|---|---|---|
+| Customers on your Piso WiFi (unpaid) | `http://<server-ip>/` (poster QR) | **No** |
+| Anyone with mobile data / other Wi-Fi | `https://yourname.linkora.top` | Yes (shop's internet must be up) |
+
+Customers on the unpaid Piso WiFi **cannot** open the linkora.top address - it needs internet - so give
+them the local address/QR. Set `shop.public_url` in `config.json` and the poster shows both.
+
+Point the tunnel at the portal, e.g. in `cloudflared` config:
+```yaml
+ingress:
+  - hostname: yourname.linkora.top
+    service: http://localhost:80      # or http://localhost:8080 if you use JCM_PORT=8080
+  - service: http_status:404
+```
+Built-in protections for tunnel traffic (the server recognises Cloudflare's headers):
+- **Staff area is blocked from the internet** (`/admin`, staff API, slips). It only works on the shop
+  network. To allow remote staff access set `"admin": {"allow_remote": true}` - only do that together
+  with **Cloudflare Access** (free Zero Trust, e.g. email one-time-PIN) in front of `/admin*`.
+- **Rate limits are per real visitor** (uses `CF-Connecting-IP`), so one person cannot lock everyone out.
+- **Uploads through the tunnel are capped at 95 MB per order** (Cloudflare's free plan rejects requests
+  over 100 MB). Customers see a clear message telling them to send fewer files or use the shop Wi-Fi.
+  Shop Wi-Fi uploads keep the larger limit (`limits.max_request_mb`).
+- Login cookies are marked `Secure` automatically when the page is opened over https.
+- Cloudflare also drops requests that take longer than ~100 s to get a response; on slow mobile data
+  a very large upload can fail - customers can retry or use the shop Wi-Fi.
+- Do not forward port 80 on your router at the same time; let the tunnel be the only way in.
+- Customers' names and files pass through Cloudflare (encrypted); mention it if you publish a privacy note.
+- "My recent orders" is remembered per address, so the LAN address and the linkora.top address keep
+  separate lists (orders can always be looked up with number + code on either).
+
 ## 4. Where orders go
 
 `config.json -> storage`: `upload_dir` (default `/mnt/nas_spool/customer_orders`) and `mount_point`

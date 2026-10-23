@@ -2,6 +2,7 @@
 import csv
 import html
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -44,11 +45,49 @@ def jerr(status: int, detail: str):
     return JSONResponse({"detail": detail}, status_code=status)
 
 
+PROXY_HEADERS = ("cf-connecting-ip", "cf-ray", "x-forwarded-for")
+
+
+def _is_private(ip: str) -> bool:
+    try:
+        a = ipaddress.ip_address(ip)
+        return a.is_private or a.is_loopback
+    except ValueError:
+        return False
+
+
+def via_proxy(request: Request) -> bool:
+    """True when the request came through Cloudflare Tunnel / a reverse proxy (i.e. from the internet).
+    Cloudflare always sets these headers and overwrites any the visitor tried to send."""
+    return any(request.headers.get(h) for h in PROXY_HEADERS)
+
+
 def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "?"
+    """The real visitor address. Behind cloudflared every request arrives from 127.0.0.1, so without this
+    all visitors would share one rate-limit bucket (one person could lock everyone out)."""
+    peer = request.client.host if request.client else "?"
+    if via_proxy(request) and _is_private(peer):
+        ip = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if ip:
+            return ip[:64]
+    return peer
+
+
+def is_https(request: Request) -> bool:
+    h = request.headers
+    return request.url.scheme == "https" or h.get("x-forwarded-proto", "").lower() == "https" or '"https"' in h.get("cf-visitor", "")
+
+
+def admin_allowed(request: Request) -> bool:
+    return settings.get_config()["admin"].get("allow_remote", False) or not via_proxy(request)
+
+
+REMOTE_MSG = "The staff area is only available on the shop network."
 
 
 def require_admin(request: Request):
+    if not admin_allowed(request):
+        raise ApiError(403, REMOTE_MSG)
     if not auth.valid_token(request.cookies.get(auth.COOKIE, "")):
         raise ApiError(401, "Please log in.")
 
@@ -69,7 +108,9 @@ class SecurityMiddleware:
             return await self.app(scope, receive, send)
         hdrs = dict(scope["headers"])
         cl = hdrs.get(b"content-length")
-        limit_mb = settings.get_config()["limits"]["max_request_mb"]
+        lim = settings.get_config()["limits"]
+        tunnel = any(h in hdrs for h in (b"cf-connecting-ip", b"cf-ray", b"x-forwarded-for"))
+        limit_mb = lim["max_request_mb_tunnel"] if tunnel else lim["max_request_mb"]
         if cl and cl.isdigit() and int(cl) > limit_mb * 1024 * 1024:
             resp = JSONResponse({"detail": f"Your upload is too big (limit {limit_mb} MB in total)."}, status_code=413)
             return await resp(scope, receive, send)
@@ -93,6 +134,12 @@ def page(filename: str):
     async def handler(request: Request):
         return FileResponse(STATIC / filename)
     return handler
+
+
+async def admin_page(request: Request):
+    if not admin_allowed(request):
+        return HTMLResponse(f"<h1>{REMOTE_MSG}</h1>", status_code=403)
+    return FileResponse(STATIC / "admin.html")
 
 
 async def favicon(request: Request):
@@ -505,6 +552,8 @@ async def api_status(request: Request):
 
 # ------------------------------------------------------------------ staff API
 async def api_login(request: Request):
+    if not admin_allowed(request):
+        return jerr(403, REMOTE_MSG)
     ip = client_ip(request)
     if not auth.limiter.allow("login:" + ip, 8, 300):
         return jerr(429, "Too many attempts. Wait a few minutes and try again.")
@@ -518,7 +567,7 @@ async def api_login(request: Request):
     hours = settings.get_config()["admin"]["session_hours"]
     resp = JSONResponse({"ok": True})
     resp.set_cookie(auth.COOKIE, auth.make_token(hours), max_age=int(hours * 3600), httponly=True,
-                    samesite="lax", path="/")
+                    samesite="lax", path="/", secure=is_https(request))
     return resp
 
 
@@ -529,7 +578,8 @@ async def api_logout(request: Request):
 
 
 async def api_me(request: Request):
-    return JSONResponse({"ok": auth.valid_token(request.cookies.get(auth.COOKIE, ""))})
+    ok = admin_allowed(request) and auth.valid_token(request.cookies.get(auth.COOKIE, ""))
+    return JSONResponse({"ok": ok})
 
 
 def _folder_of(row) -> Path:
@@ -672,6 +722,8 @@ def _slip_html(row, base_url: str) -> str:
 
 
 async def admin_slip(request: Request):
+    if not admin_allowed(request):
+        return HTMLResponse(REMOTE_MSG, status_code=403)
     if not auth.valid_token(request.cookies.get(auth.COOKIE, "")):
         return RedirectResponse("/admin")
     oid = request.path_params["order_id"]
@@ -812,7 +864,7 @@ async def lifespan(app):
 routes = [
     Route("/", page("index.html")), Route("/print", page("print.html")),
     Route("/souvenirs", page("souvenirs.html")), Route("/repair", page("repair.html")),
-    Route("/status", page("status.html")), Route("/admin", page("admin.html")),
+    Route("/status", page("status.html")), Route("/admin", admin_page),
     Route("/favicon.ico", favicon), Route("/health", api_health),
     Route("/api/config", api_config), Route("/api/estimate", api_estimate, methods=["POST"]),
     Route("/api/typed/estimate", api_typed_estimate, methods=["POST"]),

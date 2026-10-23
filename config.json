@@ -7,7 +7,8 @@
     "email": "",
     "address": "",
     "hours": "",
-    "facebook": "https://facebook.com/jcmgcs"
+    "facebook": "https://facebook.com/jcmgcs",
+    "public_url": ""
   },
   "storage": {
     "upload_dir": "/mnt/nas_spool/customer_orders",
@@ -18,6 +19,7 @@
     "max_file_mb": 50,
     "max_files_per_order": 50,
     "max_request_mb": 600,
+    "max_request_mb_tunnel": 95,
     "max_pdf_pages_analyze": 300,
     "analyze_time_limit_s": 25,
     "max_text_chars": 20000,
@@ -235,6 +237,7 @@
     "days": 14
   },
   "admin": {
-    "session_hours": 12
+    "session_hours": 12,
+    "allow_remote": false
   }
 }

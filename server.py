@@ -12,4 +12,4 @@ import uvicorn
 from portal.app import app  # noqa: F401  (imported so `uvicorn server:app` also works)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("JCM_PORT", "80")), log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("JCM_PORT", "80")), log_level="info", proxy_headers=False)

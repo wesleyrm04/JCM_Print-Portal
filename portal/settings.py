@@ -38,6 +38,7 @@ DEFAULTS = {
         "tagline": "Send your documents & photos straight to the counter - no internet needed.",
         "phone": "", "email": "", "address": "", "hours": "",
         "facebook": "https://facebook.com/jcmgcs",
+        "public_url": "",          # e.g. https://portal.linkora.top  (shown on the counter poster)
     },
     "storage": {
         "upload_dir": "/mnt/nas_spool/customer_orders",
@@ -48,6 +49,9 @@ DEFAULTS = {
     },
     "limits": {
         "max_file_mb": 50, "max_files_per_order": 50, "max_request_mb": 600,
+        # Cloudflare's free plan rejects any single request over 100 MB, so uploads that arrive through
+        # the tunnel are limited a little below that (shop Wi-Fi uploads keep the larger limit).
+        "max_request_mb_tunnel": 95,
         "max_pdf_pages_analyze": 300, "analyze_time_limit_s": 25,
         "max_text_chars": 20000, "max_copies": 100,
     },
@@ -104,7 +108,8 @@ DEFAULTS = {
         "gcash_number": "", "gcash_name": "",
     },
     "retention": {"days": 14},          # delete customer files N days after Completed/Cancelled (0 = never)
-    "admin": {"session_hours": 12},
+    # allow_remote=false: the staff area only works from the shop network, never through the tunnel/internet.
+    "admin": {"session_hours": 12, "allow_remote": False},
 }
 
 _lock = threading.Lock()
@@ -170,6 +175,7 @@ def public_config(cfg=None) -> dict:
         "photo_paper": cfg["photo_paper"], "page": cfg["page"], "layouts": cfg["layouts"],
         "rush_id": cfg["rush_id"], "payment": cfg["payment"], "statuses": STATUSES,
         "limits": {"max_file_mb": lim["max_file_mb"], "max_files": lim["max_files_per_order"],
-                   "max_copies": lim["max_copies"], "max_text_chars": lim["max_text_chars"]},
+                   "max_copies": lim["max_copies"], "max_text_chars": lim["max_text_chars"],
+                   "max_request_mb_tunnel": lim["max_request_mb_tunnel"]},
         "retention_days": cfg["retention"]["days"],
     }

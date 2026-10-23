@@ -187,7 +187,7 @@
     const url = location.origin + '/';
     $id('pTitle').textContent = document.title && 'Print Portal'; $id('pWifi').textContent = $id('wifiName').value || '(ask at the counter)';
     $id('pUrl').textContent = url; $id('pQr').style.display = ''; $id('pQr').onerror = () => { $id('pQr').style.display = 'none'; }; $id('pQr').src = '/api/admin/qr.svg?text=' + encodeURIComponent(url);
-    fetch('/api/config').then(r => r.json()).then(c => { $id('pTitle').textContent = c.shop.name; }).catch(() => {}).finally(() => {
+    fetch('/api/config').then(r => r.json()).then(c => { $id('pTitle').textContent = c.shop.name; $id('pPublic').textContent = c.shop.public_url || ''; $id('pPublicWrap').classList.toggle('hidden', !c.shop.public_url); }).catch(() => {}).finally(() => {
       document.body.classList.add('printing-poster'); setTimeout(() => { window.print(); setTimeout(() => document.body.classList.remove('printing-poster'), 500); }, 300);
     });
   });

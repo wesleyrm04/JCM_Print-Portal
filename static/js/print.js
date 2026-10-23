@@ -582,6 +582,9 @@
       o = { kind: 'document', label: T('print.type.document'), files: S.files.map(f => ({ blob: f.file, name: f.file.name })),
         meta: { color_mode: S.doc.color_mode, copies: S.doc.copies, paper: S.doc.paper, duplex: S.doc.duplex } };
     }
+    const viaTunnel = !/^(\d{1,3}\.){3}\d{1,3}$|^localhost$|\.local$/.test(location.hostname);
+    const totalMb = o.files.reduce((n, f) => n + f.blob.size, 0) / 1048576;
+    if (viaTunnel && totalMb > lim.max_request_mb_tunnel) { showErr(T('err.total', { mb: lim.max_request_mb_tunnel, now: Math.ceil(totalMb) })); return; }
     o.name = name; o.clientTotal = E.total;
     o.onProgress = p => setProgress(p); o.onRetry = n => setProgress(0, T('up.retry', { n: n }));
     S.sending = true; $id('submitBtn').disabled = true; $id('typedBtn').disabled = true; setProgress(0);

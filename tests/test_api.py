@@ -34,6 +34,7 @@ def main():
     cfg = json.load(open(Path(__file__).resolve().parent.parent / "config.json"))
     cfg["analysis"]["use_libreoffice"] = False
     cfg["limits"]["max_file_mb"] = 1            # makes the size-limit test cheap
+    cfg["limits"]["max_request_mb_tunnel"] = 1   # makes the Cloudflare-limit test cheap
     srv = Server(8123, up, data, config=cfg)
     c = Client(srv.base)
     try:
@@ -167,6 +168,33 @@ def main():
         s, j, _ = c.post_json("/api/admin/reindex", {})
         s, j, _ = c.get("/api/admin/orders?date=all")
         check(len(j["orders"]) >= 6, f"index rebuilt from order.json files ({len(j['orders'])} orders)")
+        print("behind Cloudflare Tunnel (requests carry CF-* headers)")
+        H = {"CF-Connecting-IP": "203.0.113.5", "CF-Ray": "abc123", "X-Forwarded-Proto": "https"}
+        check(c.req("GET", "/admin", headers=H, raw=True)[0] == 403, "/admin page is blocked for internet visitors")
+        check(c.req("GET", "/api/admin/orders", headers=H)[0] == 403, "staff API is blocked for internet visitors even with a valid session")
+        hj = dict(H, **{"Content-Type": "application/json"})
+        check(c.req("POST", "/api/admin/login", json.dumps({"pin": "123456"}).encode(), hj)[0] == 403, "staff login is blocked for internet visitors")
+        check(c.req("GET", f"/admin/slip/{first_id}", headers=H, raw=True)[0] == 403, "printable slip is blocked for internet visitors")
+        check(c.get("/admin", raw=True)[0] == 200, "the same pages still work on the shop network")
+        # rate limits are per real visitor, not shared through 127.0.0.1
+        codes_a = [c.req("GET", "/api/status?id=20260101-001&code=NOPE", headers={"CF-Connecting-IP": "198.51.100.1", "CF-Ray": "x"})[0] for _ in range(45)]
+        codes_b = c.req("GET", "/api/status?id=20260101-001&code=NOPE", headers={"CF-Connecting-IP": "198.51.100.2", "CF-Ray": "x"})[0]
+        lan = c.get("/api/status?id=20260101-001&code=NOPE")[0]
+        check(429 in codes_a and codes_b == 404 and lan == 404, "one visitor hitting the limit does not block other visitors or the shop Wi-Fi")
+        big = b"x" * (2 * 1024 * 1024)
+        def post_big(h):
+            try:
+                return c.req("POST", "/api/estimate", big, dict(h, **{"Content-Type": "application/octet-stream"}), raw=True)[0]
+            except Exception:
+                return "closed"          # server answered early and hung up while we were still sending
+        st, st_lan = post_big(H), post_big({})
+        check(st in (413, "closed") and st_lan != 413, f"tunnel uploads are capped below Cloudflare's limit (tunnel {st}, shop Wi-Fi {st_lan})")
+        c2 = Client(srv.base)
+        s, j, h = c2.req("POST", "/api/admin/login", json.dumps({"pin": "123456"}).encode(), {"Content-Type": "application/json", "X-Forwarded-Proto": "https"})
+        check(s == 200 and "Secure" in h.get("Set-Cookie", ""), "login cookie is marked Secure over https")
+        s, j, h = Client(srv.base).req("POST", "/api/admin/login", json.dumps({"pin": "123456"}).encode(), {"Content-Type": "application/json"})
+        check(s == 200 and "Secure" not in h.get("Set-Cookie", ""), "…but not over plain http (so the shop Wi-Fi login still works)")
+
         c.post_json("/api/admin/logout", {})
         check(c.get("/api/admin/orders")[0] == 401, "logout works")
         check(c.get("/nope")[0] == 404, "404 page")
@@ -185,6 +213,15 @@ def main():
         s, j, _ = order(c, "Ana", [("a.pdf", make_pdf(["bw"]))], {"kind": "document"})
         check(s == 503 and "offline" in j["detail"], "orders refused with 503 instead of landing on the local disk")
         check(not (tmp / "o2").exists(), "no stray folder created on the local disk")
+    finally:
+        srv.stop()
+
+    print("remote staff access when explicitly enabled")
+    cfg2 = json.loads(json.dumps(cfg)); cfg2["admin"]["allow_remote"] = True
+    srv = Server(8127, tmp / "o3", tmp / "d3", config=cfg2)
+    try:
+        s, j, _ = Client(srv.base).req("POST", "/api/admin/login", json.dumps({"pin": "123456"}).encode(), {"Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9", "CF-Ray": "r"})
+        check(s == 200, "allow_remote=true lets staff log in through the tunnel")
     finally:
         srv.stop()
 
