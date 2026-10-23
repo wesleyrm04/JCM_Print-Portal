@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My order status</title>
+<meta name="description" content="Check the status of your print, repair or souvenir order.">
+<meta name="theme-color" content="#2f5bea">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><img src="/static/images/logo.jpg" alt="" width="34" height="34"><span data-shop-short>JCM Prints</span></a>
+  <a class="btn ghost small" href="/status" data-i18n="nav.status">My order</a>
+  <button class="langbtn" id="langBtn" type="button" aria-label="Language">FIL</button>
+</div></header>
+<main class="container stack">
+  <section class="card stack">
+    <h1 data-i18n="st.title">Check my order</h1>
+    <form id="lookup" class="stack" novalidate>
+      <div><label for="oid" data-i18n="st.id">Order number</label><input id="oid" type="text" autocapitalize="characters" autocomplete="off" placeholder="20261023-001"></div>
+      <div><label for="ocode" data-i18n="st.code">Your code (6 letters/numbers)</label><input id="ocode" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="K7M2QX"></div>
+      <button class="btn block" type="submit" data-i18n="st.check">Check</button>
+    </form>
+    <div id="lookErr" class="alert bad hidden" role="alert"></div>
+    <div id="recentBox" hidden><div class="small muted" data-i18n="st.recent">Orders made on this phone</div><div id="recentBtns" class="chips" style="margin-top:6px"></div></div>
+  </section>
+  <section class="card hidden" id="out" aria-live="polite">
+    <div class="row spread"><div class="bigid" id="oId" style="font-size:1.4rem"></div><span class="badge" id="oBadge"></span></div>
+    <p class="muted" id="oWhat"></p>
+    <ol class="steps" id="oSteps"></ol>
+    <div class="alert info hidden" id="oNote"></div>
+    <div id="oPay"></div>
+    <p class="small muted" id="oUpd"></p>
+  </section>
+</main>
+<div class="footer"><span data-shop-name></span></div>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/i18n.js"></script>
+<script src="/static/js/status.js"></script>
+</body>
+</html>

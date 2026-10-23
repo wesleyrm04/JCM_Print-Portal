@@ -1,202 +1,82 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tech Repair Services | JC Hub</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .hero-section {
-            background-color: #198754; /* Bootstrap Success/Green theme for tech */
-            color: white;
-            padding: 50px 0;
-            text-align: center;
-            border-bottom: 5px solid #20c997;
-        }
-        .table-hover tbody tr:hover {
-            background-color: #f8f9fa;
-        }
-        .price-badge {
-            font-size: 0.95rem;
-            background-color: #e9ecef;
-            color: #198754;
-            padding: 5px 10px;
-            border-radius: 6px;
-            font-weight: bold;
-            white-space: nowrap;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tech Repair Services</title>
+<meta name="description" content="Computer and laptop repair rates, and a request form you can fill in over the shop Wi-Fi.">
+<meta name="theme-color" content="#2f5bea">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body class="bg-light">
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><img src="/static/images/logo.jpg" alt="" width="34" height="34"><span data-shop-short>JCM Prints</span></a>
+  <a class="btn ghost small" href="/status" data-i18n="nav.status">My order</a>
+  <button class="langbtn" id="langBtn" type="button" aria-label="Language">FIL</button>
+</div></header>
+<main class="container stack">
+  <section class="card">
+    <h1 data-i18n="rp.title">&#128187; Tech Repair Services</h1>
+    <p class="muted" data-i18n="rp.sub">Expert diagnostics, upgrades, and maintenance for your PC or laptop.</p>
+    <div class="alert warn"><b data-i18n="rp.policy.t">Shop drop-off policy</b><br><span data-i18n="rp.policy">We do not offer home service. All devices must be brought to our shop for checking and diagnostics. Since most repair work is done at night, devices that need intensive repair, reformatting or hardware replacement will need to be left at the shop. We will keep you updated on the repair status!</span></div>
+  </section>
 
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="/">JC Tech & Print Hub</a>
-            <a href="/" class="btn btn-outline-light btn-sm ms-auto">Back to Home</a>
-        </div>
-    </nav>
+  <section class="card">
+    <h2 data-i18n="rp.desktop">&#128421;&#65039; Desktop Services</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th data-i18n="rp.col.service">Service</th><th data-i18n="rp.col.price">Estimated Price</th><th data-i18n="rp.col.notes">Notes / Details</th></tr></thead>
+      <tbody>
+        <tr><td>Basic Diagnostic Fee</td><td>&#8369;150 - &#8369;200</td><td>Waived if you proceed with the repair</td></tr>
+        <tr><td>OS Format &amp; Reinstall</td><td>&#8369;400 - &#8369;500</td><td>Includes Windows 10/11, Basic Office Apps, Drivers</td></tr>
+        <tr><td>Software Troubleshooting / Virus Removal</td><td>&#8369;250 - &#8369;400</td><td>Depends on severity</td></tr>
+        <tr><td>Hardware Cleaning &amp; Thermal Paste</td><td>&#8369;300 - &#8369;400</td><td>Full dust cleaning + high-quality thermal paste</td></tr>
+        <tr><td>Component Replacement / Installation</td><td>&#8369;200 - &#8369;350</td><td>RAM, SSD/HDD, Power Supply, Graphics Card (parts excluded)</td></tr>
+        <tr><td>Custom PC Building / Assembly</td><td>&#8369;500 - &#8369;700</td><td>Cable management and system testing included</td></tr>
+      </tbody></table></div>
+  </section>
 
-    <!-- Hero Section -->
-    <div class="hero-section">
-        <div class="container">
-            <h1 class="display-5 fw-bold">💻 Tech Repair Services</h1>
-            <p class="lead">Expert diagnostics, upgrades, and maintenance for your PC or Laptop.</p>
-        </div>
-    </div>
+  <section class="card">
+    <h2 data-i18n="rp.laptop">&#128187; Laptop Services</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th data-i18n="rp.col.service">Service</th><th data-i18n="rp.col.price">Estimated Price</th><th data-i18n="rp.col.notes">Notes / Details</th></tr></thead>
+      <tbody>
+        <tr><td>Basic Diagnostic Fee</td><td>&#8369;200 - &#8369;300</td><td>Waived if you proceed with the repair</td></tr>
+        <tr><td>OS Format &amp; Reinstall</td><td>&#8369;500 - &#8369;600</td><td>Includes Windows 10/11, Drivers, Basic Office Apps</td></tr>
+        <tr><td>General Cleaning &amp; Thermal Paste</td><td>&#8369;500 - &#8369;700</td><td>Requires delicate disassembly</td></tr>
+        <tr><td>Keyboard / Screen Replacement (Labor)</td><td>&#8369;500 - &#8369;700</td><td>Cost of replacement parts not included</td></tr>
+        <tr><td>Battery / RAM / Storage Upgrade (Labor)</td><td>&#8369;250 - &#8369;400</td><td>Quick internal installations</td></tr>
+      </tbody></table></div>
+  </section>
 
-    <!-- Main Content -->
-    <div class="container my-5">
-        
-        <!-- Important Service Policy Alert -->
-        <div class="alert alert-warning shadow-sm border-warning p-4 mb-5" role="alert">
-            <div class="d-flex align-items-center mb-2">
-                <span class="fs-3 me-3">⚠️</span>
-                <h4 class="alert-heading fw-bold mb-0">Shop Drop-Off Policy</h4>
-            </div>
-            <hr>
-            <p class="mb-0 fs-6 text-dark">
-                <strong>Please Note: We do not offer home service.</strong> All devices must be brought to our shop for checking and diagnostics. Since I handle most of the repair work at night, devices that require intensive repair, reformatting, or hardware replacement will need to be left at the shop. I will keep you fully updated on the repair status!
-            </p>
-        </div>
-
-        <!-- Desktop Services Table -->
-        <div class="card shadow-sm border-0 mb-5">
-            <div class="card-header bg-dark text-white py-3">
-                <h4 class="mb-0">🖥️ Desktop Services</h4>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
-                        <thead class="table-light text-secondary">
-                            <tr>
-                                <th class="py-3 px-4 w-25">Service</th>
-                                <th class="py-3 px-4 w-25">Estimated Price</th>
-                                <th class="py-3 px-4">Notes / Details</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td class="px-4 fw-bold">Basic Diagnostic Fee</td>
-                                <td class="px-4"><span class="price-badge">₱150 - ₱200</span></td>
-                                <td class="px-4 text-muted fst-italic">Waived if you proceed with the repair</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">OS Format & Reinstall</td>
-                                <td class="px-4"><span class="price-badge">₱400 - ₱500</span></td>
-                                <td class="px-4 text-muted">Includes Windows 10/11, Basic Office Apps, Drivers</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">Software Troubleshooting / Virus Removal</td>
-                                <td class="px-4"><span class="price-badge">₱250 - ₱400</span></td>
-                                <td class="px-4 text-muted">Depends on severity</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">Hardware Cleaning & Thermal Paste</td>
-                                <td class="px-4"><span class="price-badge">₱300 - ₱400</span></td>
-                                <td class="px-4 text-muted">Full dust cleaning + high-quality thermal paste</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">Component Replacement / Installation</td>
-                                <td class="px-4"><span class="price-badge">₱200 - ₱350</span></td>
-                                <td class="px-4 text-muted">RAM, SSD/HDD, Power Supply, Graphics Card (parts excluded)</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">Custom PC Building / Assembly</td>
-                                <td class="px-4"><span class="price-badge">₱500 - ₱700</span></td>
-                                <td class="px-4 text-muted">Cable management and system testing included</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Laptop Services Table -->
-        <div class="card shadow-sm border-0 mb-5">
-            <div class="card-header bg-dark text-white py-3">
-                <h4 class="mb-0">💻 Laptop Services</h4>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
-                        <thead class="table-light text-secondary">
-                            <tr>
-                                <th class="py-3 px-4 w-25">Service</th>
-                                <th class="py-3 px-4 w-25">Estimated Price</th>
-                                <th class="py-3 px-4">Notes / Details</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td class="px-4 fw-bold">Basic Diagnostic Fee</td>
-                                <td class="px-4"><span class="price-badge">₱200 - ₱300</span></td>
-                                <td class="px-4 text-muted fst-italic">Waived if you proceed with the repair</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">OS Format & Reinstall</td>
-                                <td class="px-4"><span class="price-badge">₱500 - ₱600</span></td>
-                                <td class="px-4 text-muted">Includes Windows 10/11, Drivers, Basic Office Apps</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">General Cleaning & Thermal Paste</td>
-                                <td class="px-4"><span class="price-badge">₱500 - ₱700</span></td>
-                                <td class="px-4 text-muted">Requires delicate disassembly</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">Keyboard / Screen Replacement (Labor)</td>
-                                <td class="px-4"><span class="price-badge">₱500 - ₱700</span></td>
-                                <td class="px-4 text-muted">Cost of replacement parts not included</td>
-                            </tr>
-                            <tr>
-                                <td class="px-4 fw-bold">Battery / RAM / Storage Upgrade (Labor)</td>
-                                <td class="px-4"><span class="price-badge">₱250 - ₱400</span></td>
-                                <td class="px-4 text-muted">Quick internal installations</td>
-                            </tr>
-                            <tr class="d-none">
-                                <td class="px-4 fw-bold">Hinge Repair / Re-epoxy</td>
-                                <td class="px-4"><span class="price-badge">₱600 - ₱1,200</span></td>
-                                <td class="px-4 text-muted">Depends on the physical damage to the casing</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Order Action Card -->
-        <div class="row justify-content-center">
-            <div class="col-md-8 d-flex align-items-stretch">
-                <div class="card w-100 border-success shadow-sm text-center justify-content-center">
-                    <div class="card-body d-flex flex-column justify-content-center p-5">
-                        <h2 class="text-success fw-bold mb-3">Need to Book a Repair?</h2>
-                        <p class="text-muted fs-5 mb-4">Send us a message detailing your device issue, or drop by the shop to have it diagnosed.</p>
-                        
-                        <!-- Contact Buttons -->
-                        <div class="d-flex flex-column flex-md-row justify-content-center gap-3 mb-4">
-                            <!-- Facebook Button -->
-                            <a href="https://facebook.com/jcmgcs" target="_blank" class="btn btn-outline-primary btn-lg d-flex align-items-center justify-content-center flex-grow-1 shadow-sm">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="me-2" viewBox="0 0 16 16">
-                                  <path d="M16 8.049c0-4.446-3.582-8.05-8-8.05C3.58 0-.002 3.603-.002 8.05c0 4.017 2.926 7.347 6.75 7.951v-5.625h-2.03V8.05H6.75V6.275c0-2.017 1.195-3.131 3.022-3.131.876 0 1.791.157 1.791.157v1.98h-1.009c-.993 0-1.303.621-1.303 1.258v1.51h2.218l-.354 2.326H9.25V16c3.824-.604 6.75-3.934 6.75-7.951"/>
-                                </svg>
-                                facebook.com
-                            </a>
-                            <!-- Email Button -->
-                            <a href="mailto:wesleyrm04@gmail.com" class="btn btn-outline-dark btn-lg d-flex align-items-center justify-content-center flex-grow-1 shadow-sm">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="me-2" viewBox="0 0 16 16">
-                                  <path d="M.05 3.555A2 2 0 0 1 2 2h12a2 2 0 0 1 1.95 1.555L8 8.414.05 3.555ZM0 4.697v7.104l5.803-3.558L0 4.697ZM6.761 8.83l-6.57 4.027A2 2 0 0 0 2 14h12a2 2 0 0 0 1.808-1.144l-6.57-4.027L8 9.586l-1.239-.757Zm3.436-.586L16 11.801V4.697l-5.803 3.546Z"/>
-                                </svg>
-                                wesleyrm04@gmail.com
-                            </a>
-                        </div>
-
-                        <a href="/" class="btn btn-success btn-lg w-100 shadow">Return to Main Hub</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    </div>
-
+  <form class="card stack" id="ticketForm" data-kind="repair" novalidate>
+    <h2 data-i18n="rp.form.title">Request a repair</h2>
+    <div class="alert info small" data-i18n="rp.form.note">This only sends your details. Please still bring the device to the shop for checking.</div>
+    <div><label for="custName" data-i18n="print.name">Your name</label><input id="custName" type="text" maxlength="60" autocomplete="name" required></div>
+    <div><label for="custPhone" data-i18n="tk.phone">Mobile number (we will call or text you)</label><input id="custPhone" type="tel" maxlength="20" autocomplete="tel" inputmode="tel" required placeholder="09xx xxx xxxx"></div>
+    <div><label for="d_device_type" data-i18n="rp.f.type">Device type</label>
+      <select id="d_device_type" data-detail="device_type"><option>Laptop</option><option>Desktop</option><option>Printer</option><option>Other</option></select></div>
+    <div><label for="d_brand_model" data-i18n="rp.f.model">Brand / model (if you know it)</label><input id="d_brand_model" data-detail="brand_model" type="text" maxlength="120"></div>
+    <div><label for="d_issue" data-i18n="rp.f.issue">What is the problem?</label><textarea id="d_issue" data-detail="issue" maxlength="500" required></textarea></div>
+    <div><label for="d_accessories" data-i18n="rp.f.acc">Items you will leave with it (charger, bag...)</label><input id="d_accessories" data-detail="accessories" type="text" maxlength="200"></div>
+    <div><label for="refImages" data-i18n="tk.photos">Photos of the problem (optional, up to 5)</label><input id="refImages" type="file" accept="image/*" multiple></div>
+    <div id="refNames" class="small muted"></div>
+    <div><label for="notes" data-i18n="print.notes">Notes for the staff (optional)</label><textarea id="notes" maxlength="1000"></textarea></div>
+    <div id="upProgress" class="hidden"><div class="progress"><i id="upBar"></i></div></div>
+    <div id="formErr" class="alert bad hidden" role="alert"></div>
+    <button class="btn block" type="submit" id="submitBtn" data-i18n="tk.send">Send request</button>
+  </form>
+<section class="card stack hidden" id="result" aria-live="polite">
+  <h1 data-i18n="tk.done">&#9989; Request sent!</h1>
+  <p data-i18n="tk.done.sub">We will contact you on your mobile number. You can also follow the progress here.</p>
+  <div class="small muted" data-i18n="result.order">Order number</div><div class="bigid" id="resId"></div>
+  <div class="small muted" data-i18n="result.code">Your code</div><div><span class="codebox" id="resCode"></span></div>
+  <a class="btn block" id="resStatus" href="/status" data-i18n="result.track">Check my order status</a>
+</section>
+</main>
+<div class="footer"><span data-shop-name></span><br><a data-shop-fb target="_blank" rel="noopener" data-i18n="hub.fb">Message us on Facebook</a> <span data-if-email>&middot; <a data-shop-email></a></span></div>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/i18n.js"></script>
+<script src="/static/js/ticket.js"></script>
 </body>
 </html>

@@ -1,0 +1,22 @@
+# Auto-start on boot (Linux/systemd).
+#   sudo cp jcm-portal.service /etc/systemd/system/
+#   sudo nano /etc/systemd/system/jcm-portal.service      <- fix the two paths below
+#   sudo systemctl enable --now jcm-portal
+#   journalctl -u jcm-portal -f                            <- live log
+[Unit]
+Description=JCM Print Portal
+After=network-online.target remote-fs.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/home/pi/JCM_Print-Portal
+ExecStart=/home/pi/JCM_Print-Portal/venv/bin/python server.py
+Environment=JCM_PORT=80
+# Environment=JCM_ADMIN_PIN=123456
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+User=pi
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

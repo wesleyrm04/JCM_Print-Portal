@@ -1,255 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JCM Prints & Computer Services</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .hero-section {
-            background-color: #1e3a8a;
-            color: white;
-            padding: 60px 0;
-            text-align: center;
-            border-bottom: 5px solid #3b82f6;
-        }
-        
-        /* Card Hover Effects */
-        .service-card { 
-            transition: transform 0.3s ease, box-shadow 0.3s ease; 
-            border: none; 
-            cursor: pointer;
-            overflow: hidden;
-        }
-        .service-card:hover { 
-            transform: translateY(-8px); 
-            box-shadow: 0 15px 25px rgba(0, 0, 0, 0.15); 
-        }
-
-        /* Slideshow Container */
-        .preview-box {
-            position: relative;
-            width: 100%;
-            height: 200px;
-            background-color: #e9ecef;
-            overflow: hidden;
-        }
-        .preview-box img {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            opacity: 0;
-            transition: opacity 0.5s ease-in-out;
-        }
-        .preview-box img.active {
-            opacity: 1;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JCM Prints and Computer Services</title>
+<meta name="description" content="Send documents and photos to print over the shop Wi-Fi. Souvenirs, tarpaulins and computer repair.">
+<meta name="theme-color" content="#2f5bea">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body class="bg-light">
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><img src="/static/images/logo.jpg" alt="" width="34" height="34"><span data-shop-short>JCM Prints</span></a>
+  <a class="btn ghost small" href="/status" data-i18n="nav.status">My order</a>
+  <button class="langbtn" id="langBtn" type="button" aria-label="Language">FIL</button>
+</div></header>
+<main class="container wide">
+  <section class="hero">
+    <img src="/static/images/logo.jpg" alt="" width="84" height="84">
+    <h1 data-shop-name style="margin-top:10px">JCM Prints and Computer Services</h1>
+    <p class="muted" data-shop-tagline></p>
+    <p class="small muted"><span data-if-hours><span data-shop-hours></span></span> <span data-if-address>&middot; <span data-shop-address></span></span> <span data-if-phone>&middot; <a data-shop-phone></a></span></p>
+    <a class="btn" href="/print" style="font-size:1.1rem;padding:14px 28px" data-i18n="hub.cta">Send files to print</a>
+  </section>
 
-    <!-- Hero Section -->
-    <div class="hero-section shadow">
-        <div class="container">
-            <h1 class="display-5 fw-bold">JCM Prints & Computer Services</h1>
-            <p class="lead">Select a service below to explore our options.</p>
-        </div>
-    </div>
+  <section class="cards" style="margin-top:18px">
+    <article class="card svc">
+      <div class="pic" aria-hidden="true">&#128424;&#65039;</div>
+      <div class="body">
+        <h2 data-i18n="hub.print.title">Document &amp; Photo Printing</h2>
+        <p class="muted" data-i18n="hub.print.sub">Upload PDFs, Word files and photos, format ID pictures, or type a quick document.</p>
+        <ul id="printFacts"></ul>
+        <a class="btn" href="/print" data-i18n="hub.print.btn">Open Print Portal</a>
+      </div>
+    </article>
+    <article class="card svc">
+      <div class="pic" id="slide" aria-hidden="true">&#127873;
+        <img src="/static/images/473601503_623107957327889_4500035839716247704_n.jpg" alt="" class="on" loading="lazy" width="400" height="400">
+        <img src="/static/images/475987361_637658889206129_797339117601465013_n.jpg" alt="" loading="lazy" width="400" height="346">
+        <img src="/static/images/473265139_620589684246383_9117151090067098987_n.jpg" alt="" loading="lazy" width="400" height="300">
+      </div>
+      <div class="body">
+        <h2 data-i18n="hub.souv.title">Custom Souvenirs</h2>
+        <p class="muted" data-i18n="hub.souv.sub">Keychains, magnets, invitations, name tags, tarpaulins and standees.</p>
+        <ul><li data-i18n="hub.souv.l1">Keychains &amp; magnets for birthdays</li><li data-i18n="hub.souv.l2">Invitations &amp; tarpaulins for weddings, christenings and events</li><li data-i18n="hub.souv.l3">Custom standees and Sintra board - any character or theme</li></ul>
+        <a class="btn" href="/souvenirs" data-i18n="hub.souv.btn">Browse Catalog</a>
+      </div>
+    </article>
+    <article class="card svc">
+      <div class="pic" aria-hidden="true">&#128187;</div>
+      <div class="body">
+        <h2 data-i18n="hub.rep.title">Tech &amp; Repair Services</h2>
+        <p class="muted" data-i18n="hub.rep.sub">Diagnostics, upgrades and maintenance for your PC or laptop.</p>
+        <ul><li data-i18n="hub.rep.l1">Laptop / desktop hardware diagnostics</li><li data-i18n="hub.rep.l2">Windows reformatting</li><li data-i18n="hub.rep.l3">Software &amp; virus troubleshooting</li><li data-i18n="hub.rep.l4">Component upgrades &amp; cleaning</li></ul>
+        <a class="btn" href="/repair" data-i18n="hub.rep.btn">View Rates &amp; Request Repair</a>
+      </div>
+    </article>
+  </section>
 
-    <!-- Main Content Grid -->
-    <div class="container my-5">
-        <div class="row justify-content-center g-4">
-            
-            <!-- 1. Print Portal Card (Triggers printModal) -->
-            <div class="col-md-4">
-                <div class="card h-100 service-card" data-bs-toggle="modal" data-bs-target="#printModal" onmouseenter="playSlideshow('printSlides')" onmouseleave="stopSlideshow('printSlides')">
-                    
-                    <!-- Hover Image Slideshow -->
-                    <div class="preview-box" id="printSlides">
-                        <!-- Replace these URLs with your actual print sample images in /static/images/ -->
-                        <img src="/static/images/logo.jpg?w=500&auto=format&fit=crop" class="active" alt="Print 1">
-                        <img src="https://images.unsplash.com/photo-1562240020-ce31ccb0fa7d?w=500&auto=format&fit=crop" alt="Print 2">
-                    </div>
+  <section class="card" id="recentCard" hidden style="margin-top:14px">
+    <h2 data-i18n="hub.recent">Your recent orders</h2>
+    <ul id="recentList" class="files"></ul>
+  </section>
 
-                    <div class="card-body text-center d-flex flex-column">
-                        <h2 class="h4 card-title text-primary fw-bold mt-3">Document & Photo Printing</h2>
-                        <p class="card-text text-muted mb-3">Upload PDFs, format ID pictures, or type a quick document.</p>
-                        <span class="text-primary fw-bold mt-auto">Click for details &rarr;</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 2. Souvenirs Card (Triggers souvenirModal) -->
-            <div class="col-md-4">
-                <div class="card h-100 service-card" data-bs-toggle="modal" data-bs-target="#souvenirModal" onmouseenter="playSlideshow('souvenirSlides')" onmouseleave="stopSlideshow('souvenirSlides')">
-                    
-                    <!-- Hover Image Slideshow -->
-                    <div class="preview-box" id="souvenirSlides">
-                        <!-- Using the images you uploaded earlier! -->
-                        <img src="/static/images/473601503_623107957327889_4500035839716247704_n.jpg" class="active" alt="Keychain">
-                        <img src="/static/images/475987361_637658889206129_797339117601465013_n.jpg" alt="Invitation">
-                        <img src="/static/images/473265139_620589684246383_9117151090067098987_n.jpg" alt="Magnets">
-                    </div>
-
-                    <div class="card-body text-center d-flex flex-column">
-                        <h2 class="h4 card-title text-danger fw-bold mt-3">Souvenirs & Gifts</h2>
-                        <p class="card-text text-muted mb-3">Custom mugs, keychains, event favors, and personalized gifts.</p>
-                        <span class="text-danger fw-bold mt-auto">Click for details &rarr;</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3. Tech Repair Card (Triggers repairModal) -->
-            <div class="col-md-4">
-                <div class="card h-100 service-card" data-bs-toggle="modal" data-bs-target="#repairModal" onmouseenter="playSlideshow('repairSlides')" onmouseleave="stopSlideshow('repairSlides')">
-                    
-                    <!-- Hover Image Slideshow -->
-                    <div class="preview-box" id="repairSlides">
-                        <!-- Replace these URLs with your actual repair sample images -->
-                        <img src="https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=500&auto=format&fit=crop" class="active" alt="Repair 1">
-                        <img src="https://images.unsplash.com/photo-1588508065123-287b28e013da?w=500&auto=format&fit=crop" alt="Repair 2">
-                    </div>
-
-                    <div class="card-body text-center d-flex flex-column">
-                        <h2 class="h4 card-title text-success fw-bold mt-3">Tech Repair Services</h2>
-                        <p class="card-text text-muted mb-3">Hardware repair, OS reformatting, and network troubleshooting.</p>
-                        <span class="text-success fw-bold mt-auto">Click for details &rarr;</span>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-    </div>
-
-    <!-- ========================================== -->
-    <!-- MODALS (The Info Pop-Ups)                  -->
-    <!-- ========================================== -->
-
-    <!-- Print Modal -->
-    <div class="modal fade" id="printModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">🖨️ Printing Services</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <h6 class="fw-bold">Rates & Options:</h6>
-                    <ul>
-                        <li><strong>Standard Print:</strong> ₱3.00 (B&W) | ₱10.00 (Color)</li>
-                        <li><strong>Photo Paper:</strong> Starts at ₱20.00</li>
-                        <li><strong>Rush ID Packages:</strong> 1x1 & 2x2 available</li>
-                        <li><strong>Typing Job:</strong> ₱5.00 base fee</li>
-                    </ul>
-                    <p class="text-muted small">Our system will automatically calculate your PDF pages for Color and B&W to give you an instant estimate!</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <a href="/print" class="btn btn-primary fw-bold">Open Print Portal</a>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Souvenir Modal -->
-    <div class="modal fade" id="souvenirModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title">🎁 Custom Souvenirs</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <h6 class="fw-bold">What we offer:</h6>
-                    <ul>
-                        <li><strong>Keychains & Magnets:</strong> Perfect for birthdays!</li>
-                        <li><strong>Invitations, Tarpauline:</strong> Weddings, Christenings, and Events</li>
-                        <li><strong>Custom Standees , Sintra Board A4:</strong> Any character or theme</li>
-                    </ul>
-                    <div class="alert alert-danger p-2 text-center mb-0">
-                        <strong>Promo:</strong> Back-to-Back Keychains for only ₱20!
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <a href="/souvenirs" class="btn btn-danger fw-bold">Browse Catalog</a>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Repair Modal -->
-    <div class="modal fade" id="repairModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title">💻 Tech & Repair Services</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <h6 class="fw-bold">Common Services:</h6>
-                    <ul>
-                        <li>Laptop / Desktop Hardware Diagnostics</li>
-                        <li>OS Reformatting (Windows)</li>
-                        <li>Software & Virus Troubleshooting</li>
-                        <li>Component Upgrades & Cleaning</li>
-                    </ul>
-                    
-                    <!-- Important Drop-off Notice -->
-                    <div class="alert alert-warning p-3 mt-3 mb-0 text-dark" style="font-size: 0.9rem;">
-                        <strong>⚠️ Shop Drop-Off Only:</strong> We do not offer home service. Please bring your device to the shop for diagnostics. Since I do most repair work at night, devices requiring intensive fixes must be left overnight.
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <a href="/repair" class="btn btn-success fw-bold">View Full Rates & Details</a>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Store our running slideshow timers
-        let slideshowIntervals = {};
-
-        // Starts cycling through images inside a container
-        function playSlideshow(containerId) {
-            let container = document.getElementById(containerId);
-            let images = container.querySelectorAll('img');
-            if(images.length <= 1) return; // Don't play if only 1 image
-
-            let currentIndex = 0;
-            
-            slideshowIntervals[containerId] = setInterval(() => {
-                // Hide current image
-                images[currentIndex].classList.remove('active');
-                
-                // Move to next image
-                currentIndex = (currentIndex + 1) % images.length;
-                
-                // Show new image
-                images[currentIndex].classList.add('active');
-            }, 1200); // Changes image every 1.2 seconds
-        }
-
-        // Stops the slideshow and resets back to the first image
-        function stopSlideshow(containerId) {
-            clearInterval(slideshowIntervals[containerId]);
-            
-            let images = document.getElementById(containerId).querySelectorAll('img');
-            images.forEach((img, index) => {
-                if(index === 0) {
-                    img.classList.add('active'); // Keep first image visible
-                } else {
-                    img.classList.remove('active'); // Hide all others
-                }
-            });
-        }
-    </script>
+  <section class="card" style="margin-top:14px">
+    <h3 data-i18n="hub.wifi.title">Phone says "No internet"?</h3>
+    <p class="small muted" data-i18n="hub.wifi.body">That is normal - this Wi-Fi only connects you to the shop. If your phone asks, choose "Stay connected" (or "Keep Wi-Fi on"). If this page will not load, turn off mobile data for a moment, then try again.</p>
+  </section>
+</main>
+<div class="footer"><span data-shop-name></span><br><a data-shop-fb target="_blank" rel="noopener" data-i18n="hub.fb">Message us on Facebook</a> <span data-if-email>&middot; <a data-shop-email></a></span></div>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/i18n.js"></script>
+<script src="/static/js/hub.js"></script>
 </body>
 </html>

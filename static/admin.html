@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staff - Orders</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><img src="/static/images/logo.jpg" alt="" width="34" height="34"><span>Staff area</span></a>
+  <span id="waiting" class="badge warn hidden"></span>
+  <button class="btn ghost small hidden" id="soundBtn" type="button" aria-pressed="false">&#128276; Sound off</button>
+  <button class="btn ghost small hidden" id="logoutBtn" type="button">Log out</button>
+</div></header>
+
+<main class="container wide">
+<section class="card" id="loginCard" style="max-width:380px;margin:30px auto">
+  <h1>Staff login</h1>
+  <form id="loginForm" class="stack">
+    <div><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="current-password"></div>
+    <div id="loginErr" class="alert bad hidden" role="alert"></div>
+    <button class="btn block" type="submit">Log in</button>
+    <p class="small muted">The PIN is in the file <b>data/admin_pin.txt</b> on the server (or set JCM_ADMIN_PIN).</p>
+  </form>
+</section>
+
+<div id="app" class="hidden">
+  <div class="tabs" role="tablist">
+    <button class="chip" data-tab="orders" aria-pressed="true">Orders</button>
+    <button class="chip" data-tab="summary" aria-pressed="false">Sales</button>
+    <button class="chip" data-tab="tools" aria-pressed="false">Tools</button>
+  </div>
+
+  <section id="tab-orders">
+    <div id="storageWarn" class="alert bad hidden"></div>
+    <div class="card stack" style="margin-bottom:14px">
+      <div class="row">
+        <div><label for="fDate" class="small">Date</label><input type="date" id="fDate"></div>
+        <label class="check" style="margin-top:20px"><input type="checkbox" id="fAll"><span>All dates</span></label>
+        <div class="grow"><label for="fQ" class="small">Search</label><input type="search" id="fQ" placeholder="name, phone, order no."></div>
+      </div>
+      <div class="chips" id="fStatus"></div>
+      <div class="chips" id="fCat"></div>
+    </div>
+    <div class="admin-grid">
+      <div><ul class="olist" id="olist"></ul><p class="muted center" id="oempty">No orders.</p></div>
+      <div class="card" id="detail"><p class="muted">Pick an order on the left.</p></div>
+    </div>
+  </section>
+
+  <section id="tab-summary" class="hidden card stack">
+    <div class="row">
+      <div><label class="small" for="sFrom">From</label><input type="date" id="sFrom"></div>
+      <div><label class="small" for="sTo">To</label><input type="date" id="sTo"></div>
+      <button class="btn small" id="sGo" type="button" style="margin-top:20px">Show</button>
+      <a class="btn small outline" id="sCsv" style="margin-top:20px">Download CSV</a>
+    </div>
+    <div id="sOut"></div>
+  </section>
+
+  <section id="tab-tools" class="hidden card stack">
+    <h2>Server</h2>
+    <div id="toolStatus"></div>
+    <button class="btn outline small" id="reindexBtn" type="button">Re-scan order folders</button>
+    <p class="small muted">Use this if you copied old order folders into the NAS or restored from a backup.</p>
+    <h2 style="margin-top:12px">Customer poster</h2>
+    <p class="small muted">Print this and put it on the counter. Customers connect to the Wi-Fi, scan, and send files.</p>
+    <div><label for="wifiName" class="small">Wi-Fi name (shown on the poster)</label><input type="text" id="wifiName" maxlength="40" placeholder="e.g. JCM-PRINT"></div>
+    <div id="qrBox"></div>
+    <button class="btn" id="posterBtn" type="button">Print poster</button>
+  </section>
+</div>
+</main>
+
+<div id="posterWrap">
+  <h1 id="pTitle" style="font-size:2.4rem"></h1>
+  <h2>Send your files to print - no internet needed!</h2>
+  <ol style="text-align:left;display:inline-block;font-size:1.4rem;line-height:1.7">
+    <li>Connect to Wi-Fi: <b id="pWifi"></b></li>
+    <li>Scan the code (or open the address below)</li>
+    <li>Choose your files, check the price, tap <b>Send</b></li>
+  </ol>
+  <div><img id="pQr" class="poster-qr" alt=""></div>
+  <p style="font-size:1.8rem"><b id="pUrl"></b></p>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script src="/static/js/admin.js"></script>
+</body>
+</html>

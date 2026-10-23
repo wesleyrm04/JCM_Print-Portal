@@ -1,0 +1,240 @@
+{
+  "shop": {
+    "name": "JCM Prints and Computer Services",
+    "short_name": "JCM Prints",
+    "tagline": "Send your documents & photos straight to the counter - no internet needed.",
+    "phone": "",
+    "email": "",
+    "address": "",
+    "hours": "",
+    "facebook": "https://facebook.com/jcmgcs"
+  },
+  "storage": {
+    "upload_dir": "/mnt/nas_spool/customer_orders",
+    "mount_point": "/mnt/nas_spool",
+    "data_dir": "data"
+  },
+  "limits": {
+    "max_file_mb": 50,
+    "max_files_per_order": 50,
+    "max_request_mb": 600,
+    "max_pdf_pages_analyze": 300,
+    "analyze_time_limit_s": 25,
+    "max_text_chars": 20000,
+    "max_copies": 100
+  },
+  "analysis": {
+    "sat_threshold": 40,
+    "val_threshold": 60,
+    "min_ratio": 0.0005,
+    "use_libreoffice": "auto"
+  },
+  "rates": {
+    "doc_bw": 3.0,
+    "doc_color": 10.0,
+    "typing_fee": 5.0,
+    "doc_paper_surcharge": {
+      "A4": 0,
+      "Letter": 0,
+      "Long": 0
+    }
+  },
+  "paper_sizes": {
+    "A4": {
+      "label": "A4 (210 x 297 mm)",
+      "w": 210.0,
+      "h": 297.0
+    },
+    "Letter": {
+      "label": "Letter (8.5 x 11 in)",
+      "w": 215.9,
+      "h": 279.4
+    },
+    "Long": {
+      "label": "Long / Folio (8.5 x 13 in)",
+      "w": 215.9,
+      "h": 330.2
+    }
+  },
+  "photo_paper": {
+    "plain": {
+      "label": "Plain Paper (Full Color)",
+      "rates": {
+        "A4": 10,
+        "Letter": 10,
+        "Long": 15
+      }
+    },
+    "110gsm": {
+      "label": "Photopaper (110gsm)",
+      "rates": {
+        "A4": 20,
+        "Letter": 20,
+        "Long": 20
+      }
+    },
+    "180gsm": {
+      "label": "Photopaper (180gsm)",
+      "rates": {
+        "A4": 30,
+        "Letter": 30,
+        "Long": 30
+      }
+    },
+    "sticker": {
+      "label": "Photo Sticker Paper",
+      "rates": {
+        "A4": 35,
+        "Letter": 35,
+        "Long": 35
+      }
+    }
+  },
+  "page": {
+    "margin_mm": 5.0,
+    "gap_mm": 2.0
+  },
+  "layouts": [
+    {
+      "key": "full",
+      "name": "Full page photo",
+      "type": "full"
+    },
+    {
+      "key": "20x25",
+      "name": "20 x 25 cm",
+      "type": "fixed",
+      "w": 200,
+      "h": 250
+    },
+    {
+      "key": "13x18",
+      "name": "13 x 18 cm",
+      "type": "fixed",
+      "w": 130,
+      "h": 180
+    },
+    {
+      "key": "10x15",
+      "name": "10 x 15 cm",
+      "type": "fixed",
+      "w": 100,
+      "h": 150
+    },
+    {
+      "key": "9x13",
+      "name": "9 x 13 cm",
+      "type": "fixed",
+      "w": 90,
+      "h": 130
+    },
+    {
+      "key": "wallet",
+      "name": "Wallet (2.5 x 3.5 in)",
+      "type": "fixed",
+      "w": 63.5,
+      "h": 88.9
+    },
+    {
+      "key": "contact",
+      "name": "Contact sheet",
+      "type": "grid",
+      "cols": 5,
+      "rows": 7
+    },
+    {
+      "key": "2R",
+      "name": "2R (2.5 x 3.5 in)",
+      "type": "fixed",
+      "w": 64,
+      "h": 89
+    },
+    {
+      "key": "3R",
+      "name": "3R (3.5 x 5 in)",
+      "type": "fixed",
+      "w": 89,
+      "h": 127
+    },
+    {
+      "key": "4R",
+      "name": "4R (4 x 6 in)",
+      "type": "fixed",
+      "w": 102,
+      "h": 152
+    },
+    {
+      "key": "5R",
+      "name": "5R (5 x 7 in)",
+      "type": "fixed",
+      "w": 127,
+      "h": 178
+    },
+    {
+      "key": "8R",
+      "name": "8R (8 x 10 in)",
+      "type": "fixed",
+      "w": 203,
+      "h": 254
+    }
+  ],
+  "rush_id": {
+    "sheet": {
+      "label": "5R (5 x 7 in)",
+      "w": 127.0,
+      "h": 177.8,
+      "margin": 4.0,
+      "gap": 2.0
+    },
+    "packages": [
+      {
+        "key": "A",
+        "label": "Rush ID - Package A (6pcs 1x1)",
+        "price": 20,
+        "pieces": [
+          {
+            "size_in": 1,
+            "count": 6
+          }
+        ]
+      },
+      {
+        "key": "B",
+        "label": "Rush ID - Package B (3pcs 2x2)",
+        "price": 25,
+        "pieces": [
+          {
+            "size_in": 2,
+            "count": 3
+          }
+        ]
+      },
+      {
+        "key": "C",
+        "label": "Rush ID - Package C (2pcs 2x2 + 4pcs 1x1)",
+        "price": 30,
+        "pieces": [
+          {
+            "size_in": 2,
+            "count": 2
+          },
+          {
+            "size_in": 1,
+            "count": 4
+          }
+        ]
+      }
+    ]
+  },
+  "payment": {
+    "note": "Please pay at the counter when you pick up your order.",
+    "gcash_number": "",
+    "gcash_name": ""
+  },
+  "retention": {
+    "days": 14
+  },
+  "admin": {
+    "session_hours": 12
+  }
+}
