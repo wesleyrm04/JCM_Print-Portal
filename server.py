@@ -7,6 +7,14 @@ Environment variables (all optional):
 """
 import os
 
+import sys
+
+try:
+    import numpy  # noqa: F401  (needed for the page colour analysis)
+except ImportError:
+    sys.exit("A required package is missing.  Run this once, then start again:\n"
+             "    venv/bin/pip install -r requirements.txt        (Windows: venv\\Scripts\\pip install -r requirements.txt)")
+
 import uvicorn
 
 from portal.app import app  # noqa: F401  (imported so `uvicorn server:app` also works)

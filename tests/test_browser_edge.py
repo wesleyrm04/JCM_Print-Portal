@@ -66,7 +66,7 @@ try:
         for name, path in [("hub", "/"), ("print", "/print"), ("repair", "/repair"), ("status", "/status")]:
             page.goto(base + path); page.wait_for_load_state("networkidle"); page.screenshot(path=f"/tmp/shots/{name}.png", full_page=(name != "repair"))
         page.goto(base + "/print"); page.set_input_files("#fileInput", [{"name": "report.pdf", "mimeType": "application/pdf", "buffer": make_pdf(["bw", "color", "bw"])}])
-        until(page, "() => document.getElementById('estTotal').textContent.includes('16')", 20); page.fill("#custName", "Juan"); page.screenshot(path="/tmp/shots/print_doc.png", full_page=True)
+        until(page, "() => document.getElementById('estTotal').textContent.includes('13.50')", 20); page.fill("#custName", "Juan"); page.screenshot(path="/tmp/shots/print_doc.png", full_page=True)
         br.close()
 finally:
     out = srv.stop()

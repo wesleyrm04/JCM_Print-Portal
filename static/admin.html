@@ -11,6 +11,7 @@
 <body>
 <header class="topbar"><div class="in">
   <a class="brand" href="/"><img src="/static/images/logo.jpg" alt="" width="34" height="34"><span>Staff area</span></a>
+  <span id="whoami" class="small muted"></span>
   <span id="waiting" class="badge warn hidden"></span>
   <button class="btn ghost small hidden" id="soundBtn" type="button" aria-pressed="false">&#128276; Sound off</button>
   <button class="btn ghost small hidden" id="logoutBtn" type="button">Log out</button>
@@ -20,6 +21,7 @@
 <section class="card" id="loginCard" style="max-width:380px;margin:30px auto">
   <h1>Staff login</h1>
   <form id="loginForm" class="stack">
+    <div id="nameRow" class="hidden"><label for="staffName">Who are you?</label><select id="staffName"></select></div>
     <div><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="current-password"></div>
     <div id="loginErr" class="alert bad hidden" role="alert"></div>
     <button class="btn block" type="submit">Log in</button>
@@ -66,6 +68,20 @@
     <div id="toolStatus"></div>
     <button class="btn outline small" id="reindexBtn" type="button">Re-scan order folders</button>
     <p class="small muted">Use this if you copied old order folders into the NAS or restored from a backup.</p>
+    <div id="ownerTools" class="hidden stack">
+      <h2 style="margin-top:12px">Staff accounts <span class="small muted">(owners only)</span></h2>
+      <div id="staffBox" class="small"></div>
+      <div class="grid2"><div><label for="stName" class="small">Name</label><input id="stName" type="text" maxlength="30"></div>
+        <div><label for="stPin" class="small">PIN (4-12 digits)</label><input id="stPin" type="password" inputmode="numeric" maxlength="12" autocomplete="new-password"></div></div>
+      <div class="row"><select id="stRole" style="width:auto"><option value="staff">Staff</option><option value="owner">Owner</option></select>
+        <button class="btn small" id="stSave" type="button">Save / reset PIN</button></div>
+      <p class="small muted">Everything a person does is recorded under their name (order &rarr; History). Once everyone has an account, set <b>admin.allow_shared_pin</b> to <b>false</b> in config.json to switch the old shared PIN off.</p>
+      <h2 style="margin-top:12px">Backup</h2>
+      <div id="backupBox" class="small"></div>
+      <div class="row"><button class="btn small outline" id="backupNow" type="button">Back up now</button><a class="btn small ghost" id="backupDl" href="/api/admin/backup/download">Download latest</a></div>
+      <h2 style="margin-top:12px">POS connection</h2>
+      <div id="posBox" class="stack"></div>
+    </div>
     <h2 style="margin-top:12px">Customer poster</h2>
     <p class="small muted">Print this and put it on the counter. Customers connect to the Wi-Fi, scan, and send files.</p>
     <div><label for="wifiName" class="small">Wi-Fi name (shown on the poster)</label><input type="text" id="wifiName" maxlength="40" placeholder="e.g. JCM-PRINT"></div>

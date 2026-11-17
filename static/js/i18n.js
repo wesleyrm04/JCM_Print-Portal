@@ -60,7 +60,7 @@
  "print.type.document": "Documents & files",
  "print.type.photo": "Photo prints (choose a size)",
  "rate.bw": "Document - Black & White",
- "rate.color": "Document - Color",
+ "rate.color": "Document - Color (light / medium / full)",
  "rate.perpage": "per page",
  "rate.perset": "per set",
  "rate.persheet": "per sheet",
@@ -97,7 +97,16 @@
  "status.Repairing": "Repairing",
  "status.Inquiry Received": "Inquiry Received",
  "status.Quoted": "Quoted",
- "status.In Production": "In Production"
+ "status.In Production": "In Production",
+ "est.half": "{n} light color page(s) x {p}",
+ "est.tq": "{n} medium color page(s) x {p}",
+ "est.full": "{n} full color page(s) x {p}",
+ "est.duplex": "Two-sided discount: -{p}",
+ "rate.folio": "Long (folio) paper",
+ "rate.duplex": "Two-sided printing",
+ "st.ahead": "{n} order(s) ahead of you.",
+ "print.gcash": "GCash: {n} {name}. Paying now is optional - you can also pay at the counter.",
+ "print.payref": "Already paid by GCash? Enter the reference number (optional)"
 };
   const FIL = {
  "cancel": "Kanselahin",
@@ -265,7 +274,7 @@
  "print.type.document": "Dokumento at files",
  "print.type.photo": "Photo prints (pumili ng laki)",
  "rate.bw": "Dokumento - Black & White",
- "rate.color": "Dokumento - Kulay",
+ "rate.color": "Dokumento - Kulay (magaan / katamtaman / buo)",
  "rate.perpage": "bawat page",
  "rate.perset": "bawat set",
  "rate.persheet": "bawat sheet",
@@ -299,7 +308,16 @@
  "status.Repairing": "Inaayos",
  "status.Inquiry Received": "Natanggap ang inquiry",
  "status.Quoted": "Na-quote na",
- "status.In Production": "Ginagawa"
+ "status.In Production": "Ginagawa",
+ "est.half": "{n} magaan na kulay na page x {p}",
+ "est.tq": "{n} katamtamang kulay na page x {p}",
+ "est.full": "{n} buong kulay na page x {p}",
+ "est.duplex": "Diskwento sa two-sided: -{p}",
+ "rate.folio": "Long (folio) na papel",
+ "rate.duplex": "Two-sided na print",
+ "st.ahead": "{n} order pa ang nauuna sa iyo.",
+ "print.gcash": "GCash: {n} {name}. Opsyonal ang magbayad ngayon - pwede ring sa counter.",
+ "print.payref": "Nakabayad na sa GCash? Ilagay ang reference number (opsyonal)"
 };
   let lang = store.get('jcm_lang', 'en');
   const listeners = [];

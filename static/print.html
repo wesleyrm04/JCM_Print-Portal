@@ -84,6 +84,11 @@
     <textarea id="notes" maxlength="1000" data-i18n-ph="print.notes_ph" placeholder="e.g. staple, pages 1-5 only, long bond paper"></textarea>
   </div>
 
+  <div id="payRefBox" class="hidden">
+    <label for="payRef" data-i18n="print.payref">Already paid by GCash? Enter the reference number (optional)</label>
+    <input id="payRef" type="text" maxlength="40" autocomplete="off" inputmode="text">
+    <div class="hint" id="gcashInfo"></div>
+  </div>
   <p class="hint" id="consent"></p>
   <div id="upProgress" class="hidden"><div class="small" id="upText"></div><div class="progress"><i id="upBar"></i></div></div>
   <div id="formErr" class="alert bad hidden" role="alert"></div>

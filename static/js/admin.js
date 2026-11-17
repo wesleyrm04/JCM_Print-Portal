@@ -16,18 +16,28 @@
   const jpost = (p, o, m) => api(p, { method: m || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
 
   // ---------- login
-  function showLogin() { $id('loginCard').classList.remove('hidden'); $id('app').classList.add('hidden'); $id('logoutBtn').classList.add('hidden'); $id('soundBtn').classList.add('hidden'); clearInterval(A.timer); }
+  async function loadNames() {
+    try {
+      const r = await (await fetch('/api/admin/staff-names', { credentials: 'same-origin' })).json();
+      const sel = $id('staffName'); sel.innerHTML = '';
+      (r.names || []).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); });
+      if (r.shared_pin) { const o = document.createElement('option'); o.value = ''; o.textContent = '(shared PIN)'; sel.appendChild(o); }
+      $id('nameRow').classList.toggle('hidden', !(r.names || []).length);
+    } catch (e) { /* ignore */ }
+  }
+  function showLogin() { loadNames(); $id('loginCard').classList.remove('hidden'); $id('app').classList.add('hidden'); $id('logoutBtn').classList.add('hidden'); $id('soundBtn').classList.add('hidden'); clearInterval(A.timer); }
   async function showApp() {
     $id('loginCard').classList.add('hidden'); $id('app').classList.remove('hidden');
     $id('logoutBtn').classList.remove('hidden'); $id('soundBtn').classList.remove('hidden');
+    try { A.me = await api('/api/admin/me'); $id('whoami').textContent = A.me.name + (A.me.role === 'owner' ? ' (owner)' : ''); $id('ownerTools').classList.toggle('hidden', A.me.role !== 'owner'); } catch (e) { /* ignore */ }
     await loadOrders();
     clearInterval(A.timer); A.timer = setInterval(poll, 5000);
   }
   $id('loginForm').addEventListener('submit', async e => {
     e.preventDefault();
     $id('loginErr').classList.add('hidden');
-    try { await jpost('/api/admin/login', { pin: $id('pin').value }); $id('pin').value = ''; showApp(); }
-    catch (er) { $id('loginErr').textContent = er.message === 'login' ? 'Wrong PIN.' : er.message; $id('loginErr').classList.remove('hidden'); }
+    try { await jpost('/api/admin/login', { name: $id('nameRow').classList.contains('hidden') ? '' : $id('staffName').value, pin: $id('pin').value }); $id('pin').value = ''; showApp(); }
+    catch (er) { $id('loginErr').textContent = er.message === 'login' ? 'Wrong name or PIN.' : er.message; $id('loginErr').classList.remove('hidden'); }
   });
   $id('logoutBtn').addEventListener('click', async () => { try { await jpost('/api/admin/logout', {}); } catch (e) { /* ignore */ } showLogin(); });
 
@@ -100,7 +110,7 @@
     try { o = await api('/api/admin/orders/' + encodeURIComponent(id)); } catch (e) { if (!quiet) toast(e.message, 'bad'); return; }
     const d = o.data || {}, base = '/api/admin/orders/' + encodeURIComponent(id);
     const opts = Object.keys(d.options || {}).filter(k => k !== 'per_file').map(k => '<dt>' + esc(k.replace(/_/g, ' ')) + '</dt><dd>' + esc(String(d.options[k])) + '</dd>').join('');
-    const perFile = (d.options && d.options.per_file || []).map(f => '<li>' + esc(f.name) + ' - ' + f.pages + ' pg (' + f.color_pages + ' color / ' + f.bw_pages + ' B&W)' + (f.status !== 'ok' ? ' <span class="badge warn">' + esc(f.status) + '</span>' : '') + '</li>').join('');
+    const perFile = (d.options && d.options.per_file || []).map(f => '<li>' + esc(f.name) + ' - ' + f.pages + ' pg (' + f.bw_pages + ' B&W / ' + (f.half_pages || 0) + ' light / ' + (f.tq_pages || 0) + ' medium / ' + (f.full_pages || 0) + ' full)' + (f.status !== 'ok' ? ' <span class="badge warn">' + esc(f.status) + '</span>' : '') + '</li>').join('');
     const files = o.file_list.map(f => {
       const ext = f.name.split('.').pop().toLowerCase(), isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
       const url = base + '/file/' + encodeURIComponent(f.name);
@@ -118,6 +128,8 @@
       (perFile ? '<ul class="small">' + perFile + '</ul>' : '') +
       (d.breakdown && d.breakdown.length ? '<div class="alert info small">' + d.breakdown.map(esc).join('<br>') + '</div>' : '') +
       (d.review_notes && d.review_notes.length ? '<div class="alert warn small"><b>Please check:</b><br>' + d.review_notes.map(esc).join('<br>') + '</div>' : '') +
+      (d.customer_pay_ref ? '<div class="alert warn small"><b>Customer says they paid by GCash.</b> Reference: <b>' + esc(d.customer_pay_ref) + '</b> - check it in your GCash app before you mark it paid.</div>' : '') +
+      (d.warnings && d.warnings.length ? '<div class="alert bad small"><b>Warning:</b><br>' + d.warnings.map(esc).join('<br>') + '</div>' : '') +
       (d.instructions ? '<h3>Customer notes</h3><div class="alert info" style="white-space:pre-wrap">' + esc(d.instructions) + '</div>' : '') +
       '<h3>Files' + (o.files_deleted ? ' (deleted after retention period)' : '') + '</h3><ul style="list-style:none;padding:0;margin:0">' + files + '</ul>' +
       '<div class="row" style="margin:10px 0"><a class="btn small" href="' + base + '/zip">Download all (zip)</a> <a class="btn small outline" target="_blank" href="/admin/slip/' + encodeURIComponent(id) + '?print=1">Print slip</a></div>' +
@@ -131,6 +143,9 @@
       '<h3 style="margin-top:14px">Notes</h3>' +
       '<label class="small" for="ePub">Message the customer can see on their status page</label><textarea id="ePub" maxlength="1000">' + esc(d.public_note || '') + '</textarea>' +
       '<label class="small" for="eStaff">Private staff note</label><textarea id="eStaff" maxlength="1000">' + esc(d.staff_note || '') + '</textarea>' +
+      '<details style="margin-top:12px"><summary><b>History</b> (who changed what)</summary><ul class="small" style="padding-left:18px">' +
+      (d.history || []).slice().reverse().map(h => '<li>' + esc((h.at || '').replace('T', ' ').slice(0, 16)) + ' - ' + esc(h.by || '') + ': ' + esc(h.status ? 'status \u2192 ' + h.status : (h.change || 'created')) + '</li>').join('') + '</ul></details>' +
+      (d.claimed_by || d.pos_ref ? '<p class="small muted">POS: ' + esc(d.claimed_by || '') + ' ' + esc(d.pos_ref || '') + '</p>' : '') +
       '<div class="sticky-actions"><button class="btn block" id="eSave" type="button">Save changes</button></div>';
     $id('ePay').value = o.pay_method || '';
     const fi = $id('detail').querySelector('input[readonly]'); if (fi) fi.addEventListener('focus', ev => ev.target.select());
@@ -171,6 +186,7 @@
     const d = await api('/api/admin/orders?date=' + today());
     $id('toolStatus').innerHTML = d.storage.ok ? '<div class="alert ok">Shop storage: connected.</div>' : '<div class="alert bad">' + esc(d.storage.message) + '</div>';
     const url = location.origin + '/';
+    if (A.me && A.me.role === 'owner') { loadPos(); loadStaff(); loadBackup(); }
     $id('qrBox').textContent = '';
     try {
       const r = await fetch('/api/admin/qr.svg?text=' + encodeURIComponent(url), { credentials: 'same-origin' });
@@ -182,6 +198,36 @@
       $id('qrBox').innerHTML = '<p class="alert warn small">QR codes need the optional package: <b>pip install segno</b> (then restart). The poster still shows the web address.</p>';
     }
   }
+  async function loadPos() {
+    try {
+      const p = await api('/api/admin/pos');
+      const when = p.last_seen ? p.last_seen.replace('T', ' ').slice(0, 16) + ' (' + p.last_ip + ')' : 'never';
+      $id('posBox').innerHTML = '<div class="alert ' + (p.last_seen ? 'ok' : 'info') + '">POS last connected: <b>' + esc(when) + '</b></div>' +
+        '<div class="small">Prices: <b>' + (p.prices_source === 'pos' ? 'from the POS (synced ' + esc((p.prices_synced_at || '').replace('T', ' ').slice(0, 16)) + ')' : 'from config.json (POS has not synced yet)') + '</b></div>' +
+        '<label class="small" style="margin-top:8px">POS key (paste into the POS Settings)</label><div class="row"><input type="password" id="posKey" readonly value="' + esc(p.key) + '" class="grow">' +
+        '<button type="button" class="btn small ghost" id="posKeyShow">Show</button><button type="button" class="btn small danger" id="posKeyNew">New key</button></div>';
+      $id('posKeyShow').onclick = () => { const k = $id('posKey'); k.type = k.type === 'password' ? 'text' : 'password'; };
+      $id('posKeyNew').onclick = async () => { if (confirm('Make a new key? The POS must be given the new one.')) { await jpost('/api/admin/pos/rotate', {}); loadPos(); } };
+    } catch (e) { /* ignore */ }
+  }
+  async function loadStaff() {
+    try {
+      const r = await api('/api/admin/staff');
+      $id('staffBox').innerHTML = r.staff.length ? '<ul style="padding-left:18px;margin:4px 0">' + r.staff.map(p => '<li><b>' + esc(p.name) + '</b> - ' + esc(p.role) + ' <button type="button" class="btn small ghost" data-del="' + esc(p.name) + '">Remove</button></li>').join('') + '</ul>' : '<span class="muted">No named accounts yet - everyone uses the shared PIN. Add yourself first as <b>Owner</b>.</span>';
+      $id('staffBox').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (confirm('Remove ' + b.dataset.del + '?')) { try { await jpost('/api/admin/staff/delete', { name: b.dataset.del }); loadStaff(); } catch (e) { toast(e.message, 'bad'); } } });
+    } catch (e) { /* ignore */ }
+  }
+  $id('stSave').addEventListener('click', async () => {
+    try { await jpost('/api/admin/staff', { name: $id('stName').value, pin: $id('stPin').value, role: $id('stRole').value }); $id('stPin').value = ''; toast('Saved', 'ok'); loadStaff(); }
+    catch (e) { toast(e.message, 'bad'); }
+  });
+  async function loadBackup() {
+    try {
+      const b = await api('/api/admin/backup');
+      $id('backupBox').innerHTML = b.last ? 'Latest backup: <b>' + esc((b.last_at || '').replace('T', ' ').slice(0, 16)) + '</b> (' + b.count + ' kept' + (b.extra_dir ? ', also copied to ' + esc(b.extra_dir) : '') + ')' : '<span class="muted">No backup yet - one is made automatically every day.</span>';
+    } catch (e) { /* ignore */ }
+  }
+  $id('backupNow').addEventListener('click', async () => { try { await jpost('/api/admin/backup', {}); toast('Backup made', 'ok'); loadBackup(); } catch (e) { toast(e.message, 'bad'); } });
   $id('reindexBtn').addEventListener('click', async () => { try { const r = await jpost('/api/admin/reindex', {}); toast('Found ' + r.added + ' new order(s)', 'ok'); loadOrders(); } catch (e) { toast(e.message, 'bad'); } });
   $id('posterBtn').addEventListener('click', () => {
     const url = location.origin + '/';

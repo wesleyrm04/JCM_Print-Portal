@@ -4,11 +4,11 @@
     "short_name": "JCM Prints",
     "tagline": "Send your documents & photos straight to the counter - no internet needed.",
     "phone": "",
-    "email": "",
-    "address": "",
-    "hours": "",
+    "email": "wesleyrm04@gmail.com",
+    "address": "San Antonio, San Pascual, Batangas",
+    "hours": "5 AM - 2 PM, Weekdays",
     "facebook": "https://facebook.com/jcmgcs",
-    "public_url": ""
+    "public_url": "https://jcmgcs.nx1.lol"
   },
   "storage": {
     "upload_dir": "/mnt/nas_spool/customer_orders",
@@ -16,30 +16,37 @@
     "data_dir": "data"
   },
   "limits": {
-    "max_file_mb": 50,
+    "max_file_mb": 95,
     "max_files_per_order": 50,
     "max_request_mb": 600,
     "max_request_mb_tunnel": 95,
     "max_pdf_pages_analyze": 300,
     "analyze_time_limit_s": 25,
     "max_text_chars": 20000,
-    "max_copies": 100
+    "max_copies": 100,
+    "min_free_gb": 1.0,
+    "blocked_extensions": [],
+    "scan_command": "",
+    "scan_timeout_s": 60
   },
   "analysis": {
-    "sat_threshold": 40,
-    "val_threshold": 60,
-    "min_ratio": 0.0005,
+    "thresh_bw": 2.0,
+    "thresh_half": 25.0,
+    "thresh_three_quarter": 60.0,
     "use_libreoffice": "auto"
   },
   "rates": {
     "doc_bw": 3.0,
-    "doc_color": 10.0,
-    "typing_fee": 5.0,
-    "doc_paper_surcharge": {
-      "A4": 0,
-      "Letter": 0,
-      "Long": 0
-    }
+    "doc_half": 5.0,
+    "doc_three_quarter": 7.5,
+    "doc_full": 10.0,
+    "surcharge_plain": 0.0,
+    "surcharge_photopaper": 10.0,
+    "surcharge_folio": 1.0,
+    "duplex_discount_page": 1.0,
+    "duplex_discount_photo": 15.0,
+    "min_print_fee": 0.0,
+    "typing_fee": 5.0
   },
   "paper_sizes": {
     "A4": {
@@ -61,22 +68,15 @@
   "photo_paper": {
     "plain": {
       "label": "Plain Paper (Full Color)",
-      "rates": {
-        "A4": 10,
-        "Letter": 10,
-        "Long": 15
-      }
+      "base": "plain"
     },
     "110gsm": {
       "label": "Photopaper (110gsm)",
-      "rates": {
-        "A4": 20,
-        "Letter": 20,
-        "Long": 20
-      }
+      "base": "photopaper"
     },
     "180gsm": {
       "label": "Photopaper (180gsm)",
+      "base": "custom",
       "rates": {
         "A4": 30,
         "Letter": 30,
@@ -85,6 +85,7 @@
     },
     "sticker": {
       "label": "Photo Sticker Paper",
+      "base": "custom",
       "rates": {
         "A4": 35,
         "Letter": 35,
@@ -227,6 +228,9 @@
         ]
       }
     ]
+  },
+  "integration": {
+    "pos_enabled": true
   },
   "payment": {
     "note": "Please pay at the counter when you pick up your order.",

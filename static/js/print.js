@@ -47,10 +47,12 @@
     const r = cfg.rates;
     let h = '<table><tbody>';
     h += '<tr><td>' + esc(T('rate.bw')) + '</td><td><b>' + peso(r.doc_bw) + '</b> ' + esc(T('rate.perpage')) + '</td></tr>';
-    h += '<tr><td>' + esc(T('rate.color')) + '</td><td><b>' + peso(r.doc_color) + '</b> ' + esc(T('rate.perpage')) + '</td></tr>';
+    h += '<tr><td>' + esc(T('rate.color')) + '</td><td><b>' + peso(r.doc_half) + ' / ' + peso(r.doc_three_quarter) + ' / ' + peso(r.doc_full) + '</b> ' + esc(T('rate.perpage')) + '</td></tr>';
+    if (r.surcharge_folio > 0) h += '<tr><td>' + esc(T('rate.folio')) + '</td><td>+' + peso(r.surcharge_folio) + ' ' + esc(T('rate.perpage')) + '</td></tr>';
+    if (r.duplex_discount_page > 0) h += '<tr><td>' + esc(T('rate.duplex')) + '</td><td>-' + peso(r.duplex_discount_page) + ' ' + esc(T('rate.persheet')) + '</td></tr>';
     Object.keys(cfg.photo_paper).forEach(k => {
-      const p = cfg.photo_paper[k];
-      h += '<tr><td>' + esc(p.label) + '</td><td>' + Object.keys(p.rates).map(s => s + ' <b>' + peso(p.rates[s]) + '</b>').join(' &middot; ') + ' ' + esc(T('rate.persheet')) + '</td></tr>';
+      const p = cfg.photo_paper[k], rates = cfg.photo_rates[k];
+      h += '<tr><td>' + esc(p.label) + '</td><td>' + Object.keys(rates).map(s => s + ' <b>' + peso(rates[s]) + '</b>').join(' &middot; ') + ' ' + esc(T('rate.persheet')) + '</td></tr>';
     });
     cfg.rush_id.packages.forEach(p => { h += '<tr><td>' + esc(p.label) + '</td><td><b>' + peso(p.price) + '</b> ' + esc(T('rate.perset')) + '</td></tr>'; });
     h += '<tr><td>' + esc(T('rate.typing')) + '</td><td><b>' + peso(r.typing_fee) + '</b> + ' + esc(T('rate.printing')) + '</td></tr></tbody></table>';
@@ -68,6 +70,11 @@
   $id('custName').value = me.name || '';
   $id('custPhone').value = me.phone || '';
 
+  function buildPay() {
+    const pay = cfg.payment, on = !!pay.gcash_number;
+    $id('payRefBox').classList.toggle('hidden', !on);
+    if (on) $id('gcashInfo').textContent = T('print.gcash', { n: pay.gcash_number, name: pay.gcash_name || '' });
+  }
   function buildConsent() {
     $id('consent').textContent = cfg.retention_days > 0 ? T('print.consent', { days: cfg.retention_days }) : T('print.consent0');
   }
@@ -165,31 +172,48 @@
     }).join('');
   }
 
+  // Document price: the server calculates it (same formula as the POS), the browser only shows the answer.
+  let quoteBusy = null;
+  function quoteKey(files) { return JSON.stringify([files, S.doc.color_mode, S.doc.copies, S.doc.paper, S.doc.duplex]); }
+  async function fetchQuote(files, key) {
+    if (quoteBusy === key) return;
+    quoteBusy = key;
+    try {
+      const r = await fetch('/api/quote', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files, color_mode: S.doc.color_mode, copies: S.doc.copies, paper: S.doc.paper, duplex: S.doc.duplex }) });
+      S.quote = { key, data: r.ok ? await r.json() : null };
+    } catch (e) { S.quote = { key, data: null }; }
+    quoteBusy = null; render();
+  }
   function docEstimate() {
-    const r = cfg.rates; let bw = 0, col = 0, pending = false, review = false;
+    let pending = false, review = false; const files = [];
     S.files.forEach(f => {
       const e = f.est;
       if (!e || e === 'loading') { pending = true; return; }
-      if (e.error) { bw += 1; review = true; return; }
-      bw += e.bw_pages; col += e.color_pages; if (e.needs_review) review = true;
+      if (e.error) { files.push({ bw_pages: 1 }); review = true; return; }
+      files.push({ bw_pages: e.bw_pages, half_pages: e.half_pages, tq_pages: e.tq_pages, full_pages: e.full_pages });
+      if (e.needs_review) review = true;
     });
-    const pages = bw + col;
-    if (S.doc.color_mode === 'force_bw') { bw = pages; col = 0; } else if (S.doc.color_mode === 'force_color') { bw = 0; col = pages; }
-    const sur = Number((r.doc_paper_surcharge || {})[S.doc.paper] || 0);
-    const total = (bw * r.doc_bw + col * r.doc_color + pages * sur) * S.doc.copies;
-    const lines = [];
-    if (bw) lines.push(T('est.bw', { n: bw, p: peso(r.doc_bw) }));
-    if (col) lines.push(T('est.color', { n: col, p: peso(r.doc_color) }));
-    if (sur) lines.push(T('est.sur', { p: peso(sur) }));
-    if (S.doc.copies > 1) lines.push(T('est.copies', { n: S.doc.copies }));
-    return { total, lines, pending, review };
+    if (pending) return { total: 0, lines: [], pending: true, review };
+    const key = quoteKey(files);
+    if (!S.quote || S.quote.key !== key) { fetchQuote(files, key); return { total: 0, lines: [], pending: true, review }; }
+    const q = S.quote.data;
+    if (!q) return { total: 0, lines: [], pending: true, review: true };
+    const ex = q.extra || 0, lines = [];
+    if (q.bw) lines.push(T('est.bw', { n: q.bw, p: peso(q.rates.doc_bw + ex) }));
+    if (q.half) lines.push(T('est.half', { n: q.half, p: peso(q.rates.doc_half + ex) }));
+    if (q.tq) lines.push(T('est.tq', { n: q.tq, p: peso(q.rates.doc_three_quarter + ex) }));
+    if (q.full) lines.push(T('est.full', { n: q.full, p: peso(q.rates.doc_full + ex) }));
+    if (q.duplex_off) lines.push(T('est.duplex', { p: peso(q.duplex_off) }));
+    if (q.copies > 1) lines.push(T('est.copies', { n: q.copies }));
+    return { total: q.total, lines, pending: false, review };
   }
   function photoGeom() {
     const lay = cfg.layouts.find(l => l.key === S.photo.layout), ps = cfg.paper_sizes[S.photo.paper_size];
     return { lay, ps, rects: L.layoutRects(lay, ps.w, ps.h, cfg.page.margin_mm, cfg.page.gap_mm).rects };
   }
   function photoSheetsFor(n) { return Math.max(1, Math.ceil(n * S.photo.copies / photoGeom().rects.length)); }
-  const photoRate = () => Number(cfg.photo_paper[S.photo.paper_type].rates[S.photo.paper_size]);
+  const photoRate = () => Number(cfg.photo_rates[S.photo.paper_type][S.photo.paper_size]);
   const photoSig = () => JSON.stringify([imgFiles().map(f => f.id), S.photo.layout, S.photo.paper_size, S.photo.paper_type, S.photo.copies, S.photo.fit, S.photo.rotate]);
   const rushSig = () => JSON.stringify([S.preset, imgFiles().map(f => [f.id, f.crop.zoom.toFixed(3), f.crop.cx.toFixed(4), f.crop.cy.toFixed(4)])]);
   const photoReady = () => !!S.photo.pdf && S.photo.sig === photoSig();
@@ -514,6 +538,7 @@
       const fd = new FormData();
       fd.append('customer_name', opts.name); fd.append('phone', phone); fd.append('instructions', notes);
       fd.append('preset_request', opts.label); fd.append('order_meta', JSON.stringify(meta));
+      fd.append('pay_ref', $id('payRef').value.trim());
       Object.keys(opts.extra || {}).forEach(k => fd.append(k, opts.extra[k]));
       opts.files.forEach(f => fd.append('files', f.blob, f.name));
       return fd;
@@ -546,7 +571,7 @@
     S.photo.pdf = null; S.photo.sig = null; S.rush.pdf = null; S.rush.sig = null;
     S.doc = { color_mode: 'auto', copies: 1, paper: 'A4', duplex: false };
     $id('colorMode').value = 'auto'; $id('copies').value = 1; $id('paperSize').value = 'A4'; $id('duplex').checked = false;
-    $id('notes').value = ''; $id('fileMsg').classList.add('hidden'); clearErr();
+    $id('notes').value = ''; $id('payRef').value = ''; $id('fileMsg').classList.add('hidden'); clearErr();
     $id('upProgress').classList.add('hidden');
     $id('result').classList.add('hidden'); $id('orderForm').classList.remove('hidden'); $id('introCard').classList.remove('hidden');
     S.preset = 'document'; $id('preset').value = 'document';
@@ -585,7 +610,7 @@
     const viaTunnel = !/^(\d{1,3}\.){3}\d{1,3}$|^localhost$|\.local$/.test(location.hostname);
     const totalMb = o.files.reduce((n, f) => n + f.blob.size, 0) / 1048576;
     if (viaTunnel && totalMb > lim.max_request_mb_tunnel) { showErr(T('err.total', { mb: lim.max_request_mb_tunnel, now: Math.ceil(totalMb) })); return; }
-    o.name = name; o.clientTotal = E.total;
+    o.name = name; o.clientTotal = E.pending ? undefined : E.total;
     o.onProgress = p => setProgress(p); o.onRetry = n => setProgress(0, T('up.retry', { n: n }));
     S.sending = true; $id('submitBtn').disabled = true; $id('typedBtn').disabled = true; setProgress(0);
     const res = await sendOrder(o);
@@ -647,13 +672,13 @@
   $id('colorMode').addEventListener('change', e => { S.doc.color_mode = e.target.value; render(); });
   $id('copies').addEventListener('input', e => { S.doc.copies = clampInt(e.target.value, 1, lim.max_copies); render(); });
   $id('paperSize').addEventListener('change', e => { S.doc.paper = e.target.value; render(); });
-  $id('duplex').addEventListener('change', e => { S.doc.duplex = e.target.checked; });
+  $id('duplex').addEventListener('change', e => { S.doc.duplex = e.target.checked; render(); });
   $id('studioBtn').addEventListener('click', openStudio);
   $id('againBtn').addEventListener('click', resetAll);
   $id('langBtn').addEventListener('click', () => I18N.toggle());
   window.addEventListener('beforeunload', e => { if (S.sending) { e.preventDefault(); e.returnValue = ''; } });
 
-  function refreshText() { buildPresets(); buildRates(); buildConsent(); render(); }
+  function refreshText() { buildPresets(); buildRates(); buildConsent(); buildPay(); render(); }
   I18N.onChange(refreshText);
   I18N.apply();
   refreshText();

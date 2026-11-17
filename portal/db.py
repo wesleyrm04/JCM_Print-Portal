@@ -184,3 +184,15 @@ def expired(cutoff_iso: str):
         return [dict(r) for r in c.execute(
             "SELECT id, folder FROM orders WHERE status IN ('Completed','Cancelled') "
             "AND files_deleted=0 AND updated < ?", (cutoff_iso,)).fetchall()]
+
+
+def queue_ahead(order_id: str) -> int:
+    """How many print orders from the same day are still waiting/being printed ahead of this one."""
+    if not _inited:
+        init()
+    with closing(connect()) as c:
+        r = c.execute("SELECT date, created, category FROM orders WHERE id=?", (order_id,)).fetchone()
+        if not r or r["category"] != "print":
+            return 0
+        return c.execute("SELECT COUNT(*) n FROM orders WHERE category='print' AND date=? AND created<? "
+                         "AND status IN ('Pending','Printing')", (r["date"], r["created"])).fetchone()["n"]

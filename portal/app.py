@@ -9,6 +9,8 @@ import os
 import re
 import secrets
 import shutil
+import shlex
+import subprocess
 import tempfile
 import threading
 import time
@@ -16,6 +18,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from urllib.parse import urlparse
 
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
@@ -26,12 +29,13 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Redire
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, db, docgen, pricing, settings, storage
+from . import auth, backup, db, docgen, pricing, settings, storage
 
 STATIC = settings.BASE_DIR / "static"
 log = logging.getLogger("jcm")
 ID_RE = re.compile(r"^(?:[RS]-)?\d{8}-\d{3,4}$")
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+LEGACY_OFFICE = {"doc", "xls", "ppt"}
 LAYOUT_PDFS = {"photo": "Generated_Photo_Layout.pdf", "rushid": "Generated_RushID_Layout.pdf"}
 
 
@@ -85,11 +89,21 @@ def admin_allowed(request: Request) -> bool:
 REMOTE_MSG = "The staff area is only available on the shop network."
 
 
-def require_admin(request: Request):
+def require_admin(request: Request) -> dict:
+    """-> {'name','role'} of the logged-in staff member."""
     if not admin_allowed(request):
         raise ApiError(403, REMOTE_MSG)
-    if not auth.valid_token(request.cookies.get(auth.COOKIE, "")):
+    sess = auth.valid_token(request.cookies.get(auth.COOKIE, ""))
+    if not sess:
         raise ApiError(401, "Please log in.")
+    return sess
+
+
+def require_owner(request: Request) -> dict:
+    sess = require_admin(request)
+    if sess["role"] != "owner":
+        raise ApiError(403, "Only an owner can do this.")
+    return sess
 
 
 # ------------------------------------------------------------------ middleware
@@ -103,6 +117,21 @@ class SecurityMiddleware:
     def __init__(self, app):
         self.app = app
 
+    @staticmethod
+    def _cross_site(h) -> bool:
+        """Browser requests from another website (CSRF). The POS and scripts send no Origin and are unaffected."""
+        if h.get(b"sec-fetch-site", b"").lower() == b"cross-site":
+            return True
+        origin = h.get(b"origin", b"").decode("latin-1")
+        if not origin or origin == "null":
+            return origin == "null"
+        host = urlparse(origin).netloc.lower()
+        allowed = {h.get(b"host", b"").decode("latin-1").lower()}
+        pub = settings.get_config()["shop"].get("public_url", "")
+        if pub:
+            allowed.add(urlparse(pub).netloc.lower())
+        return host not in allowed
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
@@ -115,6 +144,9 @@ class SecurityMiddleware:
             resp = JSONResponse({"detail": f"Your upload is too big (limit {limit_mb} MB in total)."}, status_code=413)
             return await resp(scope, receive, send)
         path = scope["path"]
+        if scope["method"] in ("POST", "PUT", "PATCH", "DELETE") and self._cross_site(hdrs):
+            resp = JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
+            return await resp(scope, receive, send)
 
         async def send_wrap(message):
             if message["type"] == "http.response.start":
@@ -167,7 +199,7 @@ def check_upload(up, cfg, allowed=None):
     allowed = allowed or storage.ALLOWED_EXT
     name = up.filename or ""
     ext = pricing.ext_of(name)
-    if ext not in allowed:
+    if ext not in allowed or ext in {e.lower().lstrip(".") for e in cfg["limits"].get("blocked_extensions", [])}:
         return False, f"\"{name}\" is not a supported file type.", ext
     size = up.size if getattr(up, "size", None) is not None else _size_of(up.file)
     if size == 0:
@@ -265,6 +297,27 @@ async def api_typed_estimate(request: Request):
     return JSONResponse({"pages": pages, "chars": len(text), **res})
 
 
+async def api_quote(request: Request):
+    """Price of a document order from the per-file page counts the browser already has (one source of truth)."""
+    if not auth.limiter.allow("quote:" + client_ip(request), 240, 60):
+        return jerr(429, "Too many requests - please wait a moment.")
+    cfg = settings.get_config()
+    try:
+        b = await request.json()
+        files = b.get("files", [])
+        if not isinstance(files, list) or len(files) > 100:
+            raise ValueError
+    except Exception:
+        return jerr(400, "Bad request.")
+    an = [{k: _int(f.get(k), 0, 0, 100000) for k in ("bw_pages", "half_pages", "tq_pages", "full_pages")}
+          for f in files if isinstance(f, dict)]
+    mode = b.get("color_mode") if b.get("color_mode") in ("auto", "force_bw", "force_color") else "auto"
+    paper = b.get("paper") if b.get("paper") in cfg["paper_sizes"] else "A4"
+    res = pricing.doc_total(an, mode, _int(b.get("copies"), 1, 1, cfg["limits"]["max_copies"]), paper, cfg, duplex=_bool(b.get("duplex")))
+    res.pop("lines", None)
+    return JSONResponse(res)
+
+
 # ------------------------------------------------------------------ order creation
 def _price_document(meta, saved, cfg, folder):
     color_mode = meta.get("color_mode", "auto")
@@ -272,14 +325,15 @@ def _price_document(meta, saved, cfg, folder):
         color_mode = "auto"
     copies = _int(meta.get("copies"), 1, 1, cfg["limits"]["max_copies"])
     paper = meta.get("paper") if meta.get("paper") in cfg["paper_sizes"] else "A4"
+    duplex = _bool(meta.get("duplex"))
     analyses = [pricing.analyze_file(folder / s["saved"], s["original"], cfg) for s in saved]
-    r = pricing.doc_total(analyses, color_mode, copies, paper, cfg)
+    r = pricing.doc_total(analyses, color_mode, copies, paper, cfg, duplex=duplex)
     notes = [f"{a['name']}: {a['note']}" for a in analyses if a.get("needs_review")]
-    opts = {"color_mode": color_mode, "copies": copies, "paper": paper, "duplex": _bool(meta.get("duplex")),
-            "page_count": r["pages"], "bw_pages": r["bw"], "color_pages": r["color"],
-            "per_file": [{k: a[k] for k in ("name", "kind", "pages", "bw_pages", "color_pages", "status")} for a in analyses]}
-    preset = "Standard Document Print"
-    return preset, r["total"], r["lines"], opts, bool(notes), notes
+    keys = ("name", "kind", "pages", "bw_pages", "half_pages", "tq_pages", "full_pages", "status")
+    opts = {"color_mode": color_mode, "copies": copies, "paper": paper, "duplex": duplex,
+            "page_count": r["pages"], "bw_pages": r["bw"], "half_pages": r["half"], "tq_pages": r["tq"],
+            "full_pages": r["full"], "per_file": [{k: a[k] for k in keys} for a in analyses]}
+    return "Standard Document Print", r["total"], r["lines"], opts, bool(notes), notes
 
 
 def _price_photo(meta, saved, cfg, folder):
@@ -372,6 +426,29 @@ def _price_ticket(kind, meta, fields):
     return label, 0.0, [], clean, False, [], "\n".join(lines)
 
 
+def _scan_files(folder: Path, saved: list, cfg) -> list:
+    """Optional antivirus hook. Exit code 1 (e.g. clamscan 'infected') rejects the order; any other failure is
+    logged and flagged for staff but does not block customers."""
+    cmd = (cfg["limits"].get("scan_command") or "").strip()
+    if not cmd:
+        return []
+    notes = []
+    for sv in saved:
+        args = [a.replace("{file}", str(folder / sv["saved"])) for a in shlex.split(cmd, posix=(os.name != "nt"))]
+        try:
+            rc = subprocess.run(args, capture_output=True, timeout=cfg["limits"]["scan_timeout_s"]).returncode
+        except Exception as e:
+            log.error("virus scan could not run for %s: %s", sv["original"], e)
+            notes.append(f"Not virus-scanned (scanner error): {sv['original']}")
+            continue
+        if rc == 1:
+            log.warning("virus scan flagged %s", sv["original"])
+            raise ApiError(400, f"\"{sv['original']}\" was blocked by the virus scan.")
+        if rc != 0:
+            notes.append(f"Not virus-scanned (scanner exit code {rc}): {sv['original']}")
+    return notes
+
+
 def process_order(fields: dict, uploads: list, ip: str) -> dict:
     cfg = settings.get_config()
     lim = cfg["limits"]
@@ -414,6 +491,11 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
         log.error("order refused: %s", msg)
         raise ApiError(503, "The shop's storage is offline right now. Please tell the counter staff.")
 
+    free_gb = shutil.disk_usage(settings.upload_dir(cfg)).free / 1e9
+    if free_gb < cfg["limits"]["min_free_gb"]:
+        log.error("order refused: only %.2f GB free on the orders disk", free_gb)
+        raise ApiError(503, "The shop computer is almost out of storage right now. Please tell the counter staff.")
+
     now = settings.now()
     date_str, date_compact = now.strftime("%Y-%m-%d"), now.strftime("%Y%m%d")
     date_folder = settings.upload_dir(cfg) / date_str
@@ -441,6 +523,7 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
                 shutil.copyfileobj(up.file, out)
             saved.append({"saved": sname, "original": up.filename})
 
+        scan_notes = _scan_files(folder, saved, cfg)
         extra_instr = ""
         if kind == "document":
             preset, total, lines, opts, review, notes = _price_document(meta, saved, cfg, folder)
@@ -453,6 +536,11 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
         else:
             preset, total, lines, opts, review, notes, extra_instr = _price_ticket(kind, meta, fields)
 
+        notes.extend(scan_notes)
+        review = review or bool(scan_notes)
+        warnings = [f"{sv['original']}: old Office format (.{pricing.ext_of(sv['original'])}) can carry macros - open it in "
+                    "Protected View or print from a PDF copy" for sv in saved if pricing.ext_of(sv["original"]) in LEGACY_OFFICE]
+        pay_ref = re.sub(r"[^A-Za-z0-9 \-]", "", fields.get("pay_ref", "") or "").strip()[:40]
         if extra_instr:
             instructions = (extra_instr + ("\n\nNotes: " + instructions if instructions else "")).strip()
         if kind == "document" and opts.get("duplex"):
@@ -483,8 +571,9 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
             "client_estimate": client_total, "breakdown": lines, "options": opts,
             "needs_review": review, "review_notes": notes,
             "access_code": "".join(secrets.choice(CODE_ALPHABET) for _ in range(6)),
-            "public_note": "", "staff_note": "", "history": [{"at": iso, "status": status0}],
+            "public_note": "", "staff_note": "", "history": [{"at": iso, "by": "Customer", "status": status0}],
             "folder": str(folder), "files_deleted": False,
+            "warnings": warnings, "customer_pay_ref": pay_ref,
         }
         storage.write_instructions(folder, order)
         storage.write_json_atomic(folder / "order.json", order)
@@ -547,6 +636,7 @@ async def api_status(request: Request):
         "paid": row["paid"], "total": row["total"], "created": row["created"], "updated": row["updated"],
         "public_note": d.get("public_note", ""), "first_name": (row["name"] or "").split(" ")[0],
         "files_deleted": row["files_deleted"],
+        "ahead": await run_in_threadpool(db.queue_ahead, row["id"]) if row["status"] in ("Pending", "Printing") else 0,
     })
 
 
@@ -555,19 +645,23 @@ async def api_login(request: Request):
     if not admin_allowed(request):
         return jerr(403, REMOTE_MSG)
     ip = client_ip(request)
-    if not auth.limiter.allow("login:" + ip, 8, 300):
-        return jerr(429, "Too many attempts. Wait a few minutes and try again.")
     try:
         body = await request.json()
     except Exception:
         return jerr(400, "Bad request.")
-    if not auth.check_pin(str(body.get("pin", ""))):
-        log.warning("failed staff login from %s", ip)
-        return jerr(401, "Wrong PIN.")
+    name = str(body.get("name", "")).strip()[:30]
+    if not auth.limiter.allow("login:" + ip, 12, 300) or not auth.limiter.allow("login:" + ip + ":" + name.casefold(), 6, 600):
+        return jerr(429, "Too many attempts. Wait a few minutes and try again.")
+    allow_shared = settings.get_config()["admin"].get("allow_shared_pin", True)
+    sess = await run_in_threadpool(auth.login, name, str(body.get("pin", "")), allow_shared)
+    if not sess:
+        log.warning("failed staff login from %s (%s)", ip, name or "shared PIN")
+        return jerr(401, "Wrong name or PIN." if name else "Wrong PIN.")
     hours = settings.get_config()["admin"]["session_hours"]
-    resp = JSONResponse({"ok": True})
-    resp.set_cookie(auth.COOKIE, auth.make_token(hours), max_age=int(hours * 3600), httponly=True,
-                    samesite="lax", path="/", secure=is_https(request))
+    log.info("staff login: %s (%s) from %s", sess["name"], sess["role"], ip)
+    resp = JSONResponse({"ok": True, **sess})
+    resp.set_cookie(auth.COOKIE, auth.make_token(hours, sess["name"], sess["role"]), max_age=int(hours * 3600),
+                    httponly=True, samesite="lax", path="/", secure=is_https(request))
     return resp
 
 
@@ -578,8 +672,49 @@ async def api_logout(request: Request):
 
 
 async def api_me(request: Request):
-    ok = admin_allowed(request) and auth.valid_token(request.cookies.get(auth.COOKIE, ""))
-    return JSONResponse({"ok": ok})
+    sess = auth.valid_token(request.cookies.get(auth.COOKIE, "")) if admin_allowed(request) else None
+    return JSONResponse({"ok": bool(sess), **(sess or {})})
+
+
+async def api_staff_names(request: Request):
+    """Names for the login drop-down (shop network only - the staff area is refused from the internet)."""
+    if not admin_allowed(request):
+        return jerr(403, REMOTE_MSG)
+    return JSONResponse({"names": auth.staff_names(),
+                         "shared_pin": settings.get_config()["admin"].get("allow_shared_pin", True) or not auth.staff_names()})
+
+
+async def admin_staff_list(request: Request):
+    require_owner(request)
+    return JSONResponse({"staff": auth.staff_list(), "shared_pin": settings.get_config()["admin"].get("allow_shared_pin", True)})
+
+
+async def admin_staff_save(request: Request):
+    me = require_owner(request)
+    try:
+        b = await request.json()
+        await run_in_threadpool(auth.set_staff, str(b.get("name", "")), str(b.get("pin", "")), b.get("role", "staff"))
+    except ValueError as e:
+        return jerr(400, str(e))
+    except Exception:
+        return jerr(400, "Bad request.")
+    log.info("staff account saved by %s: %s", me["name"], b.get("name"))
+    return JSONResponse({"ok": True, "staff": auth.staff_list()})
+
+
+async def admin_staff_delete(request: Request):
+    me = require_owner(request)
+    try:
+        b = await request.json()
+        if str(b.get("name", "")).casefold() == me["name"].casefold():
+            return jerr(400, "You cannot remove your own account while logged in.")
+        await run_in_threadpool(auth.delete_staff, str(b.get("name", "")))
+    except ValueError as e:
+        return jerr(400, str(e))
+    except Exception:
+        return jerr(400, "Bad request.")
+    log.info("staff account removed by %s: %s", me["name"], b.get("name"))
+    return JSONResponse({"ok": True, "staff": auth.staff_list()})
 
 
 def _folder_of(row) -> Path:
@@ -614,27 +749,36 @@ async def admin_order(request: Request):
     return JSONResponse(row)
 
 
-def _update_order(oid: str, patch: dict):
+def _update_order(oid: str, patch: dict, actor: str = "Staff"):
     row = db.get(oid)
     if not row:
         raise ApiError(404, "Order not found.")
     o = row["data"] or {}
     cat = row["category"]
+    at = settings.now().isoformat(timespec="seconds")
+    hist = o.setdefault("history", [])
     if "status" in patch:
         if patch["status"] not in settings.STATUSES[cat]:
             raise ApiError(400, "Invalid status.")
         if patch["status"] != o.get("status"):
             o["status"] = patch["status"]
-            o.setdefault("history", []).append({"at": settings.now().isoformat(timespec="seconds"), "status": patch["status"]})
-    if "paid" in patch:
+            hist.append({"at": at, "by": actor, "status": patch["status"]})
+    if "paid" in patch and bool(patch["paid"]) != bool(o.get("paid")):
         o["paid"] = bool(patch["paid"])
+        hist.append({"at": at, "by": actor, "change": "Marked PAID" if o["paid"] else "Marked UNPAID"})
     if "payment_method" in patch:
         if patch["payment_method"] not in ("", "Cash", "GCash", "Other"):
             raise ApiError(400, "Invalid payment method.")
-        o["payment_method"] = patch["payment_method"]
+        if patch["payment_method"] != o.get("payment_method", ""):
+            o["payment_method"] = patch["payment_method"]
+            hist.append({"at": at, "by": actor, "change": f"Payment method: {patch['payment_method'] or '-'}"})
     for k in ("staff_note", "public_note"):
-        if k in patch:
+        if k in patch and _trim(str(patch[k]), 1000) != o.get(k, ""):
             o[k] = _trim(str(patch[k]), 1000)
+            hist.append({"at": at, "by": actor, "change": f"{'Message to customer' if k == 'public_note' else 'Staff note'} updated"})
+    for k in ("claimed_by", "pos_ref"):
+        if k in patch:
+            o[k] = _trim(str(patch[k]), 80)
     if "total" in patch:
         try:
             t = round(float(patch["total"]), 2)
@@ -642,8 +786,11 @@ def _update_order(oid: str, patch: dict):
             raise ApiError(400, "Invalid price.")
         if t < 0 or t > 10_000_000:
             raise ApiError(400, "Invalid price.")
-        o["total"] = t
-    o["updated"] = settings.now().isoformat(timespec="seconds")
+        if t != o.get("total"):
+            hist.append({"at": at, "by": actor, "change": f"Final price {o.get('total', 0):.2f} -> {t:.2f}"})
+            o["total"] = t
+    del hist[:-60]
+    o["updated"] = at
     synced = True
     folder = _folder_of(row)
     if folder and folder.is_dir():
@@ -658,7 +805,7 @@ def _update_order(oid: str, patch: dict):
 
 
 async def admin_patch(request: Request):
-    require_admin(request)
+    sess = require_admin(request)
     oid = request.path_params["order_id"]
     if not ID_RE.match(oid):
         return jerr(404, "Order not found.")
@@ -669,7 +816,7 @@ async def admin_patch(request: Request):
     except Exception:
         return jerr(400, "Bad request.")
     try:
-        res = await run_in_threadpool(_update_order, oid, patch)
+        res = await run_in_threadpool(_update_order, oid, patch, sess["name"])
     except ApiError as e:
         return jerr(e.status, e.detail)
     return JSONResponse(res)
@@ -789,6 +936,162 @@ async def admin_qr(request: Request):
     return Response(buf.getvalue(), media_type="image/svg+xml")
 
 
+async def admin_backup_info(request: Request):
+    require_owner(request)
+    p, m = backup.last_backup()
+    return JSONResponse({"last": p.name if p else None, "last_at": settings.datetime.fromtimestamp(m, settings.PH_TZ).isoformat(timespec="seconds") if m else None,
+                         "count": len(backup.list_backups()), "extra_dir": settings.get_config()["backup"].get("extra_dir", "")})
+
+
+async def admin_backup_run(request: Request):
+    me = require_owner(request)
+    p = await run_in_threadpool(backup.run_backup)
+    log.info("backup made by %s: %s", me["name"], p.name)
+    return JSONResponse({"ok": True, "name": p.name})
+
+
+async def admin_backup_download(request: Request):
+    require_owner(request)
+    p, _ = backup.last_backup()
+    if not p:
+        return jerr(404, "No backup yet.")
+    return FileResponse(p, filename=p.name, media_type="application/zip")
+
+
+# ------------------------------------------------------------------ POS (cash register) API - LAN only
+_pos_seen = {"at": None, "ip": ""}
+
+
+def require_pos(request: Request):
+    if not settings.get_config()["integration"]["pos_enabled"]:
+        raise ApiError(404, "Not found")
+    if via_proxy(request):                          # the POS lives on the shop network, never on the internet
+        raise ApiError(403, "The POS connection is only available on the shop network.")
+    ip = client_ip(request)
+    if not auth.limiter.allow("posfail:ok:" + ip, 600, 60):
+        raise ApiError(429, "Too many requests.")
+    h = request.headers.get("authorization", "")
+    token = h[7:].strip() if h.lower().startswith("bearer ") else ""
+    if not auth.check_pos_key(token):
+        if not auth.limiter.allow("posfail:" + ip, 10, 300):
+            raise ApiError(429, "Too many wrong keys. Wait a few minutes.")
+        raise ApiError(401, "Wrong or missing POS key.")
+    _pos_seen.update(at=settings.now().isoformat(timespec="seconds"), ip=ip)
+
+
+def _pos_view(row, full=False):
+    d = row.get("data") or {}
+    out = {"id": row["id"], "category": row["category"], "kind": row["kind"], "customer": row["name"],
+           "phone": row["phone"], "request": row["preset"], "status": row["status"], "paid": row["paid"],
+           "payment_method": row["pay_method"], "total": row["total"], "computed_total": row["computed_total"],
+           "needs_review": row["needs_review"], "files": row["files"], "files_deleted": row["files_deleted"],
+           "created": row["created"], "updated": row["updated"], "claimed_by": d.get("claimed_by", ""),
+           "pos_ref": d.get("pos_ref", ""), "instructions": d.get("instructions", ""),
+           "options": d.get("options", {}), "review_notes": d.get("review_notes", []), "breakdown": d.get("breakdown", []),
+           "warnings": d.get("warnings", []), "customer_pay_ref": d.get("customer_pay_ref", "")}
+    if full:
+        folder = _folder_of(row)
+        out["file_list"] = ([{"name": p.name, "size": p.stat().st_size} for p in sorted(folder.iterdir())
+                             if p.is_file() and not p.name.endswith(".tmp")] if folder and folder.is_dir() else [])
+        out["statuses"] = settings.STATUSES[row["category"]]
+    return out
+
+
+async def pos_ping(request: Request):
+    require_pos(request)
+    ok, msg = await run_in_threadpool(storage.storage_status)
+    cfg = settings.get_config()
+    return JSONResponse({"ok": True, "shop": cfg["shop"]["name"], "storage_ok": ok, "storage": msg,
+                         "prices_source": cfg["prices_source"], "prices_synced_at": cfg["prices_synced_at"],
+                         "time": settings.now().isoformat(timespec="seconds"), "api": 1})
+
+
+async def pos_orders(request: Request):
+    require_pos(request)
+    q = request.query_params
+    since = q.get("updated_since", "")
+    rows, _ = await run_in_threadpool(db.search, "all", q.get("status") or "active", q.get("category") or "print", None,
+                                      _int(q.get("limit"), 100, 1, 500), 0)
+    if since:
+        rows = [r for r in rows if (r["updated"] or "") > since]
+    return JSONResponse({"orders": [_pos_view(r) for r in rows], "now": settings.now().isoformat(timespec="seconds")})
+
+
+async def pos_order(request: Request):
+    require_pos(request)
+    oid = request.path_params["order_id"]
+    row = await run_in_threadpool(db.get, oid) if ID_RE.match(oid) else None
+    if not row:
+        return jerr(404, "Order not found.")
+    return JSONResponse(_pos_view(row, full=True))
+
+
+async def pos_file(request: Request):
+    require_pos(request)
+    oid, fname = request.path_params["order_id"], request.path_params["filename"]
+    row = await run_in_threadpool(db.get, oid) if ID_RE.match(oid) else None
+    folder = _folder_of(row)
+    p = storage.resolve_file(folder, fname) if folder and folder.is_dir() else None
+    if not p:
+        return jerr(404, "File not found (it may have been deleted after the retention period).")
+    return FileResponse(p, filename=p.name, content_disposition_type="attachment")
+
+
+async def pos_patch(request: Request):
+    require_pos(request)
+    oid = request.path_params["order_id"]
+    if not ID_RE.match(oid):
+        return jerr(404, "Order not found.")
+    try:
+        patch = await request.json()
+        if not isinstance(patch, dict):
+            raise ValueError
+    except Exception:
+        return jerr(400, "Bad request.")
+    actor = "POS" + (": " + _trim(str(patch.get("actor", "")), 40) if patch.get("actor") else "")
+    patch = {k: v for k, v in patch.items() if k in ("status", "paid", "payment_method", "total", "public_note", "claimed_by", "pos_ref")}
+    try:
+        res = await run_in_threadpool(_update_order, oid, patch, actor)
+    except ApiError as e:
+        return jerr(e.status, e.detail)
+    return JSONResponse(res)
+
+
+async def pos_rates_put(request: Request):
+    require_pos(request)
+    try:
+        body = await request.json()
+        saved = await run_in_threadpool(settings.save_pos_rates, body.get("rates", body))
+    except ValueError as e:
+        return jerr(400, str(e))
+    except Exception:
+        return jerr(400, "Bad request.")
+    log.info("prices updated from the POS (%d values)", len(saved))
+    return JSONResponse({"ok": True, "applied": sorted(saved)})
+
+
+async def pos_rates_get(request: Request):
+    require_pos(request)
+    cfg = settings.get_config()
+    return JSONResponse({"source": cfg["prices_source"], "synced_at": cfg["prices_synced_at"], "rates": cfg["rates"],
+                         "analysis": {k: cfg["analysis"][k] for k in ("thresh_bw", "thresh_half", "thresh_three_quarter")},
+                         "packages": {p["key"]: p["price"] for p in cfg["rush_id"]["packages"]}})
+
+
+async def admin_pos(request: Request):
+    require_owner(request)
+    cfg = settings.get_config()
+    return JSONResponse({"enabled": cfg["integration"]["pos_enabled"], "key": auth.pos_key(),
+                         "prices_source": cfg["prices_source"], "prices_synced_at": cfg["prices_synced_at"],
+                         "last_seen": _pos_seen["at"], "last_ip": _pos_seen["ip"]})
+
+
+async def admin_pos_rotate(request: Request):
+    me = require_owner(request)
+    log.warning("POS key rotated by %s", me["name"])
+    return JSONResponse({"key": await run_in_threadpool(auth.rotate_pos_key)})
+
+
 # ------------------------------------------------------------------ retention + startup
 def purge_expired():
     cfg = settings.get_config()
@@ -850,6 +1153,7 @@ async def lifespan(app):
     _setup_logging()
     db.init()
     auth._load()
+    auth.pos_key()
     ok, msg = storage.storage_status()
     if ok:
         threading.Thread(target=lambda: log.info("indexed %d existing order(s)", db.reindex(settings.upload_dir())),
@@ -857,6 +1161,7 @@ async def lifespan(app):
     else:
         log.error("STORAGE PROBLEM: %s - customers cannot place orders until this is fixed", msg)
     threading.Thread(target=_retention_loop, daemon=True).start()
+    threading.Thread(target=lambda: backup.backup_loop(log), daemon=True).start()
     log.info("JCM Print Portal ready. Orders go to %s", settings.upload_dir())
     yield
 
@@ -871,7 +1176,11 @@ routes = [
     Route("/api/submit_order", api_submit, methods=["POST"]),
     Route("/api/status", api_status),
     Route("/api/admin/login", api_login, methods=["POST"]), Route("/api/admin/logout", api_logout, methods=["POST"]),
-    Route("/api/admin/me", api_me),
+    Route("/api/admin/me", api_me), Route("/api/admin/staff-names", api_staff_names),
+    Route("/api/admin/staff", admin_staff_list, methods=["GET"]), Route("/api/admin/staff", admin_staff_save, methods=["POST"]),
+    Route("/api/admin/staff/delete", admin_staff_delete, methods=["POST"]),
+    Route("/api/admin/backup", admin_backup_info, methods=["GET"]), Route("/api/admin/backup", admin_backup_run, methods=["POST"]),
+    Route("/api/admin/backup/download", admin_backup_download),
     Route("/api/admin/orders", admin_orders),
     Route("/api/admin/orders/{order_id}", admin_order, methods=["GET"]),
     Route("/api/admin/orders/{order_id}", admin_patch, methods=["PATCH"]),
@@ -881,6 +1190,13 @@ routes = [
     Route("/api/admin/summary", admin_summary), Route("/api/admin/export.csv", admin_export),
     Route("/api/admin/poll", admin_poll), Route("/api/admin/reindex", admin_reindex, methods=["POST"]),
     Route("/api/admin/qr.svg", admin_qr),
+    Route("/api/admin/pos", admin_pos), Route("/api/admin/pos/rotate", admin_pos_rotate, methods=["POST"]),
+    Route("/api/quote", api_quote, methods=["POST"]),
+    Route("/api/pos/ping", pos_ping), Route("/api/pos/orders", pos_orders),
+    Route("/api/pos/orders/{order_id}", pos_order, methods=["GET"]),
+    Route("/api/pos/orders/{order_id}", pos_patch, methods=["PATCH"]),
+    Route("/api/pos/orders/{order_id}/file/{filename}", pos_file),
+    Route("/api/pos/rates", pos_rates_get, methods=["GET"]), Route("/api/pos/rates", pos_rates_put, methods=["PUT"]),
     Mount("/static", StaticFiles(directory=str(STATIC)), name="static"),
 ]
 

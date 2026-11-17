@@ -26,6 +26,7 @@
     $id('oBadge').textContent = stepLabel(j.status);
     $id('oBadge').className = 'badge ' + (cancelled ? 'bad' : j.status === 'Ready for Pickup' ? 'ok' : j.status === 'Completed' ? 'ok' : '');
     $id('oSteps').innerHTML = cancelled ? '' : j.steps.map((s, i) => '<li class="' + (i < j.step ? 'done' : i === j.step ? 'now' : '') + '">' + esc(stepLabel(s)) + '</li>').join('');
+    const ah = $id('oAhead'); ah.textContent = j.ahead > 0 ? T('st.ahead', { n: j.ahead }) : ''; ah.classList.toggle('hidden', !(j.ahead > 0));
     const n = $id('oNote'); n.textContent = j.public_note || ''; n.classList.toggle('hidden', !j.public_note);
     $id('oPay').innerHTML = j.total > 0 ? '<b>' + esc(peso(j.total)) + '</b> &middot; ' + esc(j.paid ? T('st.paid') : T('st.unpaid')) : '';
     const d = new Date(j.updated);

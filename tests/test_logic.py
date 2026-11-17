@@ -1,6 +1,7 @@
 """Unit tests for the framework-free logic (run: python tests/test_logic.py)."""
 import io
 import json
+import time
 import os
 import subprocess
 import sys
@@ -68,26 +69,35 @@ def test_docgen():
 
 
 def test_color():
-    print("colour detection")
+    print("colour levels (same rule as the POS)")
     d = Path(tempfile.mkdtemp())
     p = d / "t.pdf"
     p.write_bytes(make_pdf(["bw", "color", "logo", "tint", "bw"]))
     r = pricing.analyze_pdf(p, CFG)
     check(r["pages"] == 5 and r["complete"], "5 pages counted")
-    check(r["color_pages"] == 2 and r["bw_pages"] == 3, f"colour page + logo page = colour, tint/bw = B&W (got {r['color_pages']} colour)")
+    check((r["bw"], r["half"], r["tq"], r["full"]) == (3, 1, 1, 0),
+          f"B&W + faint scan tint = B&W, small logo = light, big colour block = medium (got {r['bw']}/{r['half']}/{r['tq']}/{r['full']})")
 
 
 def test_pricing():
-    print("pricing")
-    a = [{"bw_pages": 3, "color_pages": 1}, {"bw_pages": 0, "color_pages": 2}]
-    r = pricing.doc_total(a, "auto", 1, "A4", CFG)
-    check(r["total"] == 3 * 3 + 3 * 10, f"auto: 3 bw + 3 colour = 39 (got {r['total']})")
-    check(pricing.doc_total(a, "force_bw", 1, "A4", CFG)["total"] == 6 * 3, "force B&W")
-    check(pricing.doc_total(a, "force_color", 2, "A4", CFG)["total"] == 6 * 10 * 2, "force colour x2 copies")
-    check(pricing.photo_total(CFG, "180gsm", "A4", 3)["total"] == 90, "180gsm x3 = 90")
-    check(pricing.photo_rate(CFG, "plain", "Long") == 15, "plain Long = 15")
+    print("pricing (POS formula)")
+    a = [{"bw_pages": 3, "half_pages": 0, "tq_pages": 0, "full_pages": 1}, {"bw_pages": 0, "half_pages": 2, "tq_pages": 0, "full_pages": 0}]
+    t = lambda *args, **kw: pricing.doc_total(a, *args, **kw)["total"]
+    check(t("auto", 1, "A4", CFG) == 3 * 3 + 2 * 5 + 10, f"auto: 3 bw + 2 light + 1 full = 29 (got {t('auto', 1, 'A4', CFG)})")
+    check(t("force_bw", 1, "A4", CFG) == 6 * 3, "force B&W = 18")
+    check(t("force_color", 2, "A4", CFG) == 6 * 10 * 2, "force colour x2 copies = 120")
+    check(t("auto", 1, "A4", CFG, duplex=True) == 29 - 3, "two-sided: 6 pages = 3 sheets, 1.00 off each = 26")
+    check(t("force_bw", 1, "Long", CFG) == 6 * (3 + 1), "Long paper adds the folio surcharge per page")
+    check(pricing.photo_total(CFG, "180gsm", "A4", 3)["total"] == 90, "custom paper (180gsm) x3 = 90")
+    check(pricing.photo_rate(CFG, "plain", "A4") == 10 and pricing.photo_rate(CFG, "plain", "Long") == 11, "plain photo sheet = full-colour page (+1 on Long)")
+    check(pricing.photo_rate(CFG, "110gsm", "A4") == 20 and pricing.photo_rate(CFG, "110gsm", "Long") == 21, "photopaper sheet = full colour + 10 (+1 on Long)")
     check(pricing.typed_total(CFG, 2, 1)["total"] == 5 + 2 * 3, "typed doc: 5 fee + 2 pages")
     check(pricing.photo_pages_expected(CFG, "10x15", "A4", 3, 1) == 2, "3 photos @ 2 per sheet = 2 sheets")
+    cfg2 = json.loads(json.dumps(CFG)); cfg2["rates"]["min_print_fee"] = 15
+    check(pricing.doc_total([{"bw_pages": 1}], "auto", 1, "A4", cfg2)["total"] == 15, "minimum print fee applies")
+    cfg3 = json.loads(json.dumps(CFG)); settings.apply_pos_rates(cfg3, {"rate_bw": 4, "rate_package_b": 99, "thresh_bw": 5})
+    check(cfg3["rates"]["doc_bw"] == 4 and cfg3["analysis"]["thresh_bw"] == 5 and pricing.rush_package(cfg3, "B")["price"] == 99, "POS rates replace portal prices")
+    check(settings.clean_pos_rates({"rate_bw": "3", "evil": 1, "rate_doc_full": -5, "thresh_bw": 500}) == {"rate_bw": 3.0}, "unknown / negative / out-of-range POS values are ignored")
 
 
 def test_files():
@@ -155,8 +165,26 @@ def test_retention():
     check(json.loads((old / "order.json").read_text())["files_deleted"] is True, "order.json records that files were purged")
 
 
+def test_backup():
+    print("backups")
+    try:
+        from portal import backup, db
+    except ImportError:
+        print("  skip"); return
+    db.init()
+    settings.get_config()["backup"]["keep"] = 2
+    extra = Path(tempfile.mkdtemp())
+    settings.get_config()["backup"]["extra_dir"] = str(extra)
+    made = []
+    for _ in range(3):
+        made.append(backup.run_backup()); time.sleep(1.1)
+    check(len(backup.list_backups()) == 2, f"only the newest {2} backups are kept")
+    check(len(list(extra.glob("portal-*.zip"))) == 3, "each backup is also copied to the extra folder")
+    settings.get_config()["backup"]["extra_dir"] = ""
+
+
 if __name__ == "__main__":
-    for t in (test_layout, test_docgen, test_color, test_pricing, test_files, test_office, test_retention):
+    for t in (test_layout, test_docgen, test_color, test_pricing, test_files, test_office, test_retention, test_backup):
         t()
     print("\n" + ("ALL PASSED" if not failures else f"{len(failures)} FAILED: {failures}"))
     sys.exit(1 if failures else 0)

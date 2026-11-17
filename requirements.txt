@@ -4,5 +4,6 @@ uvicorn>=0.30
 python-multipart>=0.0.9
 pypdfium2>=4.30
 pillow>=10.0
+numpy>=1.24            # colour-level page analysis (same method as the POS)
 # Optional: QR codes in the staff page (pure Python)
 segno>=1.6

@@ -7,9 +7,9 @@
   function facts() {
     if (!cfg) return;
     const r = cfg.rates, rush = cfg.rush_id.packages;
-    const minPhoto = Math.min.apply(null, Object.keys(cfg.photo_paper).map(k => Math.min.apply(null, Object.values(cfg.photo_paper[k].rates))));
+    const minPhoto = Math.min.apply(null, Object.keys(cfg.photo_rates).map(k => Math.min.apply(null, Object.values(cfg.photo_rates[k]))));
     document.getElementById('printFacts').innerHTML =
-      '<li>' + esc(I18N.t('hub.f.docs', { bw: peso(r.doc_bw), c: peso(r.doc_color) })) + '</li>' +
+      '<li>' + esc(I18N.t('hub.f.docs', { bw: peso(r.doc_bw), c: peso(r.doc_half) + '-' + peso(r.doc_full) })) + '</li>' +
       '<li>' + esc(I18N.t('hub.f.photo', { p: peso(minPhoto) })) + '</li>' +
       '<li>' + esc(I18N.t('hub.f.rush', { n: rush.length })) + '</li>' +
       '<li>' + esc(I18N.t('hub.f.typing', { p: peso(r.typing_fee) })) + '</li>';

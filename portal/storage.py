@@ -124,6 +124,10 @@ def write_instructions(folder: Path, o: dict):
          f"Estimated Total:   PHP {o.get('total', 0):,.2f}" + ("   (STAFF: please verify)" if o.get("needs_review") else ""),
          "-" * 42, "PRICE BREAKDOWN:"]
     L += [f"  {x}" for x in o.get("breakdown", [])] or ["  -"]
+    if o.get("customer_pay_ref"):
+        L += ["-" * 42, f"CUSTOMER SAYS THEY PAID BY GCASH - reference: {o['customer_pay_ref']}  (STAFF: verify in your GCash app)"]
+    for w in o.get("warnings", []):
+        L += ["-" * 42, "WARNING: " + w]
     L += ["-" * 42, "CUSTOMER INSTRUCTIONS / NOTES:", o.get("instructions") or "None provided.",
           "-" * 42, "ATTACHED FILES:"]
     L += [f" - {f}" for f in o.get("files", [])]

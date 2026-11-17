@@ -1,5 +1,11 @@
-"""Document analysis (page count + colour detection) and server-side price calculation.
-The browser shows an estimate, but THIS module decides the real total."""
+"""Document analysis (page count + colour level) and server-side price calculation.
+
+The colour classification and the price formula are the SAME as the POS (JCM PrintOS):
+  * a page's colour share = pixels whose max-min RGB spread > 15, as a % of non-white ("inked") pixels
+  * <= thresh_bw -> B&W | <= thresh_half -> light | <= thresh_three_quarter -> medium | else full colour
+  * price = per-level page rates + paper/folio surcharge, minus the two-sided discount, x copies, min fee
+tests/test_pos_parity.py checks this file against the POS's own code, so a quote here equals the POS price.
+"""
 import math
 import os
 import re
@@ -9,10 +15,11 @@ import tempfile
 import threading
 import time
 import zipfile
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
+import numpy as np
 import pypdfium2 as pdfium
-from PIL import Image, ImageChops
 
 from . import docgen
 from .layout import find_layout, per_page
@@ -20,52 +27,65 @@ from .layout import find_layout, per_page
 _PDFIUM_LOCK = threading.Lock()          # pdfium is not thread-safe
 IMAGE_EXT = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif"}
 OFFICE_EXT = {"doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf"}
+ZERO = Decimal("0")
+
+
+def D(x) -> Decimal:
+    if x is None or x == "":
+        return ZERO
+    return x if isinstance(x, Decimal) else Decimal(str(x))
+
+
+def q2(x) -> Decimal:
+    return D(x).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def ext_of(name: str) -> str:
     return name.rsplit(".", 1)[-1].lower() if "." in name else ""
 
 
-# ---------------------------------------------------------------- colour detection
-def page_is_color(img, sat_thr=40, val_thr=60, min_ratio=0.0005):
-    """True when a visible share of pixels is clearly coloured.  Tiny JPEG noise or a
-    faint scanner tint stays black & white; a logo or coloured heading counts as colour."""
-    rgb = img.convert("RGB")
-    _, s, v = rgb.convert("HSV").split()
-    sm = s.point(lambda x: 255 if x > sat_thr else 0)
-    vm = v.point(lambda x: 255 if x > val_thr else 0)
-    colored = ImageChops.multiply(sm, vm).histogram()[255]
-    ratio = colored / float(rgb.width * rgb.height or 1)
-    return ratio >= min_ratio, ratio
+# ---------------------------------------------------------------- colour levels (same rule as the POS)
+def classify_array(arr, th_bw, th_half, th_tq) -> str:
+    """arr: HxWx3 uint8 -> 'bw' | 'half' | 'tq' | 'full'"""
+    color_pixels = int(np.sum(np.ptp(arr, axis=2) > 15))
+    inked = int(np.sum(np.sum(arr, axis=2) < 750))
+    pct = 0.0 if inked == 0 else color_pixels / inked * 100.0
+    if pct <= th_bw:
+        return "bw"
+    if pct <= th_half:
+        return "half"
+    if pct <= th_tq:
+        return "tq"
+    return "full"
 
 
 def analyze_pdf(path, cfg) -> dict:
     lim, an = cfg["limits"], cfg["analysis"]
     cap, tlimit = lim["max_pdf_pages_analyze"], lim["analyze_time_limit_s"]
     start = time.time()
+    res = {"bw": 0, "half": 0, "tq": 0, "full": 0}
+    done = 0
     with _PDFIUM_LOCK:
         doc = pdfium.PdfDocument(str(path))
         total = len(doc)
-        doc.close()
-    bw = color = done = 0
-    for i in range(total):
-        if i >= cap or time.time() - start > tlimit:
-            break
-        with _PDFIUM_LOCK:
-            doc = pdfium.PdfDocument(str(path))
-            try:
+    try:
+        for i in range(total):
+            if i >= cap or time.time() - start > tlimit:
+                break
+            with _PDFIUM_LOCK:
                 page = doc[i]
-                pil = page.render(scale=0.5).to_pil()
-                page.close()
-            finally:
-                doc.close()
-        is_col, _ = page_is_color(pil, an["sat_threshold"], an["val_threshold"], an["min_ratio"])
-        color += 1 if is_col else 0
-        bw += 0 if is_col else 1
-        done += 1
-    complete = done == total
-    bw += total - done                      # pages we did not get to are assumed B&W
-    return {"pages": total, "bw_pages": bw, "color_pages": color, "complete": complete}
+                try:
+                    arr = np.array(page.render(scale=1.0).to_pil().convert("RGB"))
+                finally:
+                    page.close()
+            res[classify_array(arr, an["thresh_bw"], an["thresh_half"], an["thresh_three_quarter"])] += 1
+            done += 1
+    finally:
+        with _PDFIUM_LOCK:
+            doc.close()
+    res["bw"] += total - done                  # pages we did not get to are assumed B&W
+    return {"pages": total, "bw": res["bw"], "half": res["half"], "tq": res["tq"], "full": res["full"],
+            "complete": done == total}
 
 
 def pdf_page_count(path) -> int:
@@ -95,8 +115,7 @@ def _office_pages_from_xml(path, ext):
 
 
 def _libreoffice_bin(cfg):
-    mode = cfg["analysis"]["use_libreoffice"]
-    if mode is False:
+    if cfg["analysis"]["use_libreoffice"] is False:
         return None
     return shutil.which("soffice") or shutil.which("libreoffice")
 
@@ -112,8 +131,7 @@ def _convert_to_pdf(path, cfg, timeout=60):
         subprocess.run(cmd, timeout=timeout, capture_output=True, check=False)
         out = Path(tmp) / (Path(path).stem + ".pdf")
         if out.exists():
-            res = analyze_pdf(out, cfg)
-            return res
+            return analyze_pdf(out, cfg)
     except Exception:
         return None
     finally:
@@ -121,78 +139,139 @@ def _convert_to_pdf(path, cfg, timeout=60):
     return None
 
 
+def _fill(base, pages, bw=0, half=0, tq=0, full=0):
+    base.update(pages=pages, bw_pages=bw, half_pages=half, tq_pages=tq, full_pages=full)
+
+
 def analyze_file(path, filename, cfg) -> dict:
-    """Describe one uploaded file: how many pages, how many colour / B&W.
-    status: ok = measured, estimated = best guess, unknown = staff must check."""
+    """How many pages and at which colour level. status: ok = measured, estimated = best guess,
+    unknown = staff must check."""
     ext = ext_of(filename)
-    base = {"name": filename, "kind": "other", "pages": 1, "bw_pages": 1, "color_pages": 0,
-            "status": "unknown", "note": ""}
+    base = {"name": filename, "kind": "other", "status": "unknown", "note": ""}
+    _fill(base, 1, bw=1)
     try:
         if ext == "pdf":
             r = analyze_pdf(path, cfg)
-            base.update(kind="pdf", pages=r["pages"], bw_pages=r["bw_pages"],
-                        color_pages=r["color_pages"],
-                        status="ok" if r["complete"] else "estimated",
+            _fill(base, r["pages"], r["bw"], r["half"], r["tq"], r["full"])
+            base.update(kind="pdf", status="ok" if r["complete"] else "estimated",
                         note="" if r["complete"] else "Very long PDF - colour only partly checked")
         elif ext in IMAGE_EXT:
-            base.update(kind="image", pages=1, bw_pages=0, color_pages=1, status="ok",
-                        note="Photos are charged as 1 colour page each")
+            _fill(base, 1, full=1)
+            base.update(kind="image", status="ok", note="Photos are charged as 1 full-colour page each")
         elif ext in ("txt", "csv"):
-            text = Path(path).read_text(encoding="utf-8", errors="replace")
-            n = docgen.count_pages(text)
-            base.update(kind="text", pages=n, bw_pages=n, color_pages=0, status="estimated")
+            n = docgen.count_pages(Path(path).read_text(encoding="utf-8", errors="replace"))
+            _fill(base, n, bw=n)
+            base.update(kind="text", status="estimated")
         elif ext in OFFICE_EXT:
             r = _convert_to_pdf(path, cfg)
             if r:
-                base.update(kind="office", pages=r["pages"], bw_pages=r["bw_pages"],
-                            color_pages=r["color_pages"], status="ok" if r["complete"] else "estimated")
+                _fill(base, r["pages"], r["bw"], r["half"], r["tq"], r["full"])
+                base.update(kind="office", status="ok" if r["complete"] else "estimated")
             else:
                 n = _office_pages_from_xml(path, ext)
                 if n:
-                    base.update(kind="office", pages=n, bw_pages=n, color_pages=0, status="estimated",
+                    _fill(base, n, bw=n)
+                    base.update(kind="office", status="estimated",
                                 note="Page count read from the file; colour will be checked at the counter")
                 else:
-                    base.update(kind="office", status="unknown",
-                                note="Page count unknown - the counter will confirm the price")
+                    base.update(kind="office", note="Page count unknown - the counter will confirm the price")
         else:
             base.update(note="File type not recognised - the counter will confirm the price")
     except Exception as e:                         # a broken file must not break the order
+        _fill(base, 1, bw=1)
         base.update(status="unknown", note=f"Could not read this file ({type(e).__name__})")
+    base["color_pages"] = base["half_pages"] + base["tq_pages"] + base["full_pages"]      # for display
     base["needs_review"] = base["status"] != "ok"
     return base
 
 
-# ---------------------------------------------------------------- price calculation
+# ---------------------------------------------------------------- price calculation (POS formula)
 def peso(n) -> str:
-    return f"PHP {n:,.2f}"
+    return f"PHP {float(n):,.2f}"
 
 
-def doc_total(analyses, color_mode, copies, paper, cfg):
-    rates = cfg["rates"]
-    bw = sum(a["bw_pages"] for a in analyses)
-    col = sum(a["color_pages"] for a in analyses)
-    pages = bw + col
+def _counts(analyses):
+    return {"bw": sum(int(a.get("bw_pages", 0)) for a in analyses),
+            "half": sum(int(a.get("half_pages", 0)) for a in analyses),
+            "tq": sum(int(a.get("tq_pages", 0)) for a in analyses),
+            "full": sum(int(a.get("full_pages", 0)) for a in analyses)}
+
+
+def _page_money(r, paper_type, paper_size):
+    is_photo = "photo" in (paper_type or "").lower()
+    extra = D(r["surcharge_photopaper"] if is_photo else r["surcharge_plain"])
+    if "long" in (paper_size or "").lower() or "folio" in (paper_size or "").lower():
+        extra += D(r["surcharge_folio"])
+    return is_photo, extra
+
+
+def doc_price(counts: dict, color_mode, copies, paper, duplex, cfg, paper_type="Plain Paper", typing_fee=False):
+    """counts: {'bw','half','tq','full'} pages for ONE copy. Returns a dict with Decimal-exact money."""
+    r = cfg["rates"]
+    bw, half, tq, full = (int(counts.get(k, 0)) for k in ("bw", "half", "tq", "full"))
+    pages = bw + half + tq + full
     if color_mode == "force_bw":
-        bw, col = pages, 0
+        bw, half, tq, full = pages, 0, 0, 0
     elif color_mode == "force_color":
-        bw, col = 0, pages
-    sur = float(rates.get("doc_paper_surcharge", {}).get(paper, 0))
-    per_copy = bw * rates["doc_bw"] + col * rates["doc_color"] + pages * sur
-    total = per_copy * copies
-    lines = []
-    if bw:
-        lines.append(f"B&W pages: {bw} x {peso(rates['doc_bw'])}")
-    if col:
-        lines.append(f"Color pages: {col} x {peso(rates['doc_color'])}")
-    if sur:
-        lines.append(f"{paper} paper: {pages} x {peso(sur)}")
-    if copies > 1:
-        lines.append(f"Copies: x{copies}")
-    return {"total": round(total, 2), "pages": pages, "bw": bw, "color": col, "lines": lines}
+        bw, half, tq, full = 0, 0, 0, pages
+    copies = max(1, int(copies or 1))
+    is_photo, extra = _page_money(r, paper_type, paper)
+    color_base = (half * (D(r["doc_half"]) + extra) + tq * (D(r["doc_three_quarter"]) + extra)
+                  + full * (D(r["doc_full"]) + extra))
+    page_total = bw * (D(r["doc_bw"]) + extra) + color_base
+    duplex_off = ZERO
+    if duplex:
+        sheets = pages // 2
+        per_sheet = D(r["duplex_discount_photo"] if is_photo else r["duplex_discount_page"])
+        new_total = max(ZERO, page_total - sheets * per_sheet)
+        duplex_off = (page_total - new_total) * copies
+        page_total = new_total
+    base = page_total * copies
+    fee = ZERO
+    if typing_fee:
+        fee = D(r["typing_fee"])
+        base += fee
+    final = max(ZERO, base)
+    min_fee = D(r["min_print_fee"])
+    if ZERO < final < min_fee:
+        final = min_fee
+    return {"total": float(q2(final)), "pages": pages, "bw": bw, "half": half, "tq": tq, "full": full,
+            "copies": copies, "extra": float(extra), "duplex_off": float(q2(duplex_off)), "fee": float(fee),
+            "rates": {k: float(r[k]) for k in ("doc_bw", "doc_half", "doc_three_quarter", "doc_full")}}
+
+
+def describe(res: dict) -> list:
+    """Plain-English breakdown lines for staff (customers get the same numbers localised by the browser)."""
+    r, ex = res["rates"], res["extra"]
+    out = []
+    for key, rk, label in (("bw", "doc_bw", "B&W pages"), ("half", "doc_half", "Light color pages"),
+                           ("tq", "doc_three_quarter", "Medium color pages"), ("full", "doc_full", "Full color pages")):
+        if res[key]:
+            out.append(f"{label}: {res[key]} x {peso(r[rk] + ex)}")
+    if res["duplex_off"]:
+        out.append(f"Two-sided discount: -{peso(res['duplex_off'])}")
+    if res["fee"]:
+        out.append(f"Typing fee: {peso(res['fee'])}")
+    if res["copies"] > 1:
+        out.append(f"Copies: x{res['copies']}")
+    return out
+
+
+def doc_total(analyses, color_mode, copies, paper, cfg, duplex=False):
+    res = doc_price(_counts(analyses), color_mode, copies, paper, duplex, cfg)
+    res["lines"] = describe(res)
+    return res
 
 
 def photo_rate(cfg, paper_type, paper_size) -> float:
-    return float(cfg["photo_paper"][paper_type]["rates"][paper_size])
+    """Price of one printed photo sheet. plain/photopaper are priced like the POS prices a full-colour page."""
+    spec = cfg["photo_paper"][paper_type]
+    base = spec.get("base", "custom")
+    if base in ("plain", "photopaper"):
+        res = doc_price({"full": 1}, "auto", 1, paper_size, False, cfg,
+                        paper_type="Photopaper" if base == "photopaper" else "Plain Paper")
+        return res["total"]
+    return float(spec["rates"][paper_size])
 
 
 def photo_pages_expected(cfg, layout_key, paper_size, n_images, copies) -> int:
@@ -204,7 +283,7 @@ def photo_pages_expected(cfg, layout_key, paper_size, n_images, copies) -> int:
 
 def photo_total(cfg, paper_type, paper_size, pages):
     rate = photo_rate(cfg, paper_type, paper_size)
-    return {"total": round(rate * pages, 2), "pages": pages,
+    return {"total": float(q2(D(rate) * pages)), "pages": pages,
             "lines": [f"{pages} sheet(s) x {peso(rate)} ({cfg['photo_paper'][paper_type]['label']}, {paper_size})"]}
 
 
@@ -216,7 +295,6 @@ def rush_package(cfg, key):
 
 
 def typed_total(cfg, pages, copies):
-    fee, rate = cfg["rates"]["typing_fee"], cfg["rates"]["doc_bw"]
-    total = fee + pages * rate * copies
-    return {"total": round(total, 2), "pages": pages,
-            "lines": [f"Typing fee: {peso(fee)}", f"Printing: {pages} page(s) x {copies} x {peso(rate)}"]}
+    res = doc_price({"bw": pages}, "auto", copies, "A4", False, cfg, typing_fee=True)
+    lines = describe(res)
+    return {"total": res["total"], "pages": pages, "lines": lines}

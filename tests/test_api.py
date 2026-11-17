@@ -35,6 +35,10 @@ def main():
     cfg["analysis"]["use_libreoffice"] = False
     cfg["limits"]["max_file_mb"] = 1            # makes the size-limit test cheap
     cfg["limits"]["max_request_mb_tunnel"] = 1   # makes the Cloudflare-limit test cheap
+    cfg["limits"]["blocked_extensions"] = ["doc"]
+    scan = tmp / "scan.py"
+    scan.write_text("import sys\nsys.exit(1 if b'EICAR' in open(sys.argv[1],'rb').read() else 0)\n")
+    cfg["limits"]["scan_command"] = f'"{sys.executable}" "{scan}" {{file}}'
     srv = Server(8123, up, data, config=cfg)
     c = Client(srv.base)
     try:
@@ -61,8 +65,8 @@ def main():
         files = [("one.pdf", make_pdf(["bw", "bw"])), ("two.pdf", make_pdf(["color", "bw", "bw"])), ("p.jpg", make_jpeg())]
         meta = {"kind": "document", "color_mode": "auto", "copies": 2, "paper": "A4", "client_total": 1.0, "status": "Paid"}
         s, j, _ = order(c, "Juan Dela Cruz", files, meta)
-        # pages: 2bw + (1 colour + 2 bw) + 1 photo(colour) = bw 4 *3 + colour 2*10 = 32, x2 copies = 64
-        check(s == 200 and j["order_id"].endswith("-001") and j["total"] == 64.0, f"ALL files priced, copies applied: total {j.get('total')} == 64")
+        # 4 bw pages x3 + 1 medium-colour page x7.50 + 1 photo (full colour) x10 = 29.50, x2 copies = 59
+        check(s == 200 and j["order_id"].endswith("-001") and j["total"] == 59.0, f"ALL files priced with the POS formula, copies applied: total {j.get('total')} == 59")
         check("folder" not in j, "server path is not leaked to customers")
         d = next(up.glob("*/001_*"))
         oj = json.load(open(d / "order.json"))
@@ -142,7 +146,7 @@ def main():
         s, j, _ = c.post_json(f"/api/admin/orders/{first_id}", {"status": "Printing", "paid": True, "payment_method": "GCash", "total": 70, "public_note": "Almost done"}, method="PATCH")
         check(s == 200 and j["json_synced"], "staff update saved to DB and order.json")
         oj = json.load(open(next(up.glob("*/001_*")) / "order.json"))
-        check(oj["status"] == "Printing" and oj["paid"] and oj["total"] == 70 and oj["computed_total"] == 64 and len(oj["history"]) == 2, "order.json updated, original computed total kept, history logged")
+        check(oj["status"] == "Printing" and oj["paid"] and oj["total"] == 70 and oj["computed_total"] == 59 and len(oj["history"]) >= 5 and all("by" in h for h in oj["history"]), "order.json updated, original computed total kept, every change logged with who did it")
         check(c.post_json(f"/api/admin/orders/{first_id}", {"status": "Bogus"}, method="PATCH")[0] == 400, "invalid status rejected")
         check(c.post_json(f"/api/admin/orders/{rid}", {"status": "Repairing"}, method="PATCH")[0] == 200, "repair statuses work")
         s, j, _ = c.get(f"/api/status?id={first_id}&code={first_code}")
@@ -168,6 +172,121 @@ def main():
         s, j, _ = c.post_json("/api/admin/reindex", {})
         s, j, _ = c.get("/api/admin/orders?date=all")
         check(len(j["orders"]) >= 6, f"index rebuilt from order.json files ({len(j['orders'])} orders)")
+        print("quote endpoint = same numbers the order will get")
+        s, j, _ = c.post_json("/api/quote", {"files": [{"bw_pages": 4, "tq_pages": 1, "full_pages": 1}], "copies": 2, "color_mode": "auto", "paper": "A4"})
+        check(s == 200 and j["total"] == 59.0, f"quote for the first order = {j.get('total')}")
+        s, j, _ = c.post_json("/api/quote", {"files": [{"bw_pages": 4}], "duplex": True, "paper": "Long"})
+        check(j["total"] == 4 * 4 - 2, f"two-sided Long: 4 pages x 4.00 - 2 sheets x 1.00 = {j['total']}")
+
+        print("queue position on the status page")
+        s, j, _ = c.get(f"/api/status?id={first_id}&code={first_code}")
+        check(j["ahead"] == 0, "first order has nobody ahead")
+        s, jq, _ = order(c, "Queue Tester", [("q.pdf", make_pdf(["bw"]))], {"kind": "document"})
+        s, j, _ = c.get(f"/api/status?id={jq['order_id']}&code={jq['access_code']}")
+        check(j["ahead"] >= 1, f"a later order sees the orders ahead of it ({j['ahead']})")
+        s, j2, _ = c.post_json("/api/quote", {"files": []})
+        check(s == 200 and j2["total"] == 0, "empty quote is 0")
+
+        print("security: cross-site requests and blocked files")
+        s, j, _ = c.req("POST", "/api/admin/login", json.dumps({"pin": "123456"}).encode(), {"Content-Type": "application/json", "Origin": "https://evil.example"})
+        check(s == 403, "login from another website is blocked (CSRF)")
+        s, j, _ = c.req("POST", "/api/admin/login", json.dumps({"pin": "123456"}).encode(), {"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"})
+        check(s == 403, "Sec-Fetch-Site: cross-site is blocked")
+        s, j, _ = c.req("POST", "/api/typed/estimate", json.dumps({"text": "x"}).encode(), {"Content-Type": "application/json", "Origin": srv.base})
+        check(s == 200, "same-site browser requests still work")
+        s, j, _ = order(c, "Ana", [("old.doc", b"\xd0\xcf\x11\xe0" + b"0" * 100)], {"kind": "document"})
+        check(s == 400 and "not a supported" in j["detail"], ".doc is refused when listed in blocked_extensions")
+        s, j, _ = order(c, "Ana", [("EICAR.pdf", b"%PDF-1.4 EICAR-TEST " + b"0" * 50)], {"kind": "document"})
+        check(s == 400 and "virus scan" in j["detail"], "virus-scan hook rejects a flagged upload")
+        check(not list(up.glob("*/*EICAR*")), "…and leaves no files behind")
+
+        print("POS connection (LAN only, key protected)")
+        POS = {"Authorization": "Bearer " + open(data / "pos_api_key.txt").read().strip()}
+        check(c.req("GET", "/api/pos/ping")[0] == 401, "POS API refuses requests without the key")
+        check(c.req("GET", "/api/pos/ping", headers={"Authorization": "Bearer nope"})[0] == 401, "…and with a wrong key")
+        s, j, _ = c.req("GET", "/api/pos/ping", headers=POS)
+        check(s == 200 and j["ok"] and j["prices_source"] == "portal", "ping works with the key")
+        check(c.req("GET", "/api/pos/ping", headers=dict(POS, **{"CF-Connecting-IP": "203.0.113.7"}))[0] == 403, "POS API is blocked for internet (tunnel) visitors even with the key")
+        s, j, _ = c.req("GET", "/api/pos/orders?status=all&category=print", headers=POS)
+        check(s == 200 and len(j["orders"]) >= 3 and j["orders"][0]["customer"], f"POS lists print orders ({len(j['orders'])})")
+        s, j, _ = c.req("GET", f"/api/pos/orders/{first_id}", headers=POS)
+        check(s == 200 and len(j["file_list"]) >= 3 and j["options"]["copies"] == 2, "POS can read an order with its options and file list")
+        fname = [f["name"] for f in j["file_list"] if f["name"].endswith(".pdf")][0]
+        s, body, _ = c.req("GET", f"/api/pos/orders/{first_id}/file/{fname}", headers=POS, raw=True)
+        check(s == 200 and body[:4] == b"%PDF", "POS can download the customer's file")
+        check(c.req("GET", f"/api/pos/orders/{first_id}/file/..%2Forder.json", headers=POS, raw=True)[0] == 404, "no path tricks on POS downloads")
+        s, j, _ = c.req("PATCH", f"/api/pos/orders/{first_id}", json.dumps({"status": "Ready for Pickup", "claimed_by": "Maria", "pos_ref": "OR-000123", "total": 59, "actor": "Maria"}).encode(), dict(POS, **{"Content-Type": "application/json"}))
+        check(s == 200, "POS can update the status")
+        s, j, _ = c.get(f"/api/status?id={first_id}&code={first_code}")
+        check(j["status"] == "Ready for Pickup", "customer sees the POS status change")
+        oj = json.load(open(next(up.glob("*/001_*/order.json"))))
+        check(oj["claimed_by"] == "Maria" and oj["pos_ref"] == "OR-000123" and any(h["by"] == "POS: Maria" for h in oj["history"]), "POS changes are logged as 'POS: <cashier>'")
+        s, j, _ = c.req("PATCH", f"/api/pos/orders/{first_id}", json.dumps({"status": "Bogus"}).encode(), dict(POS, **{"Content-Type": "application/json"}))
+        check(s == 400, "POS cannot set an invalid status")
+        s, j, _ = c.req("PUT", "/api/pos/rates", json.dumps({"rates": {"rate_bw": 4, "rate_doc_full": 12, "rate_package_a": 22, "junk": 9}}).encode(), dict(POS, **{"Content-Type": "application/json"}))
+        check(s == 200 and "junk" not in j["applied"], f"POS can push its price list ({j.get('applied')})")
+        s, j, _ = c.post_json("/api/quote", {"files": [{"bw_pages": 2, "full_pages": 1}]})
+        check(j["total"] == 2 * 4 + 12, f"customers are now quoted with the POS prices ({j['total']})")
+        s, j, _ = c.get("/api/config")
+        check(j["prices_source"] == "pos" and [p["price"] for p in j["rush_id"]["packages"]][0] == 22, "public config shows POS prices and Rush ID package price")
+        s, j, _ = c.req("PUT", "/api/pos/rates", json.dumps({"rates": {"evil": 1}}).encode(), dict(POS, **{"Content-Type": "application/json"}))
+        check(s == 400, "a price list without rate_bw is rejected")
+        c.post_json("/api/admin/login", {"pin": "123456"})
+        s, j, _ = c.get("/api/admin/pos")
+        check(s == 200 and j["last_seen"] and j["prices_source"] == "pos", "staff page shows when the POS last connected")
+        s, j, _ = c.post_json("/api/admin/pos/rotate", {})
+        check(s == 200 and j["key"] != POS["Authorization"][7:] and c.req("GET", "/api/pos/ping", headers=POS)[0] == 401, "rotating the key locks out the old one")
+
+        print("named staff accounts, roles and audit trail")
+        c.post_json("/api/admin/login", {"pin": "123456"})
+        s, j, _ = c.post_json("/api/admin/staff", {"name": "Maria", "pin": "1234", "role": "owner"})
+        check(s == 200 and j["staff"][0]["name"] == "Maria", "owner (shared-PIN session) can create the first account")
+        check(c.post_json("/api/admin/staff", {"name": "Ben", "pin": "56ab", "role": "staff"})[0] == 400, "PIN must be digits")
+        check(c.post_json("/api/admin/staff", {"name": "Ben", "pin": "5678", "role": "staff"})[0] == 200, "staff account created")
+        s, j, _ = Client(srv.base).get("/api/admin/staff-names")
+        check(j["names"] == ["Ben", "Maria"] and j["shared_pin"] is True, f"login drop-down lists names {j['names']}")
+        ben = Client(srv.base)
+        check(ben.post_json("/api/admin/login", {"name": "Ben", "pin": "0000"})[0] == 401, "wrong PIN for a named account is refused")
+        check(ben.post_json("/api/admin/login", {"name": "Nobody", "pin": "5678"})[0] == 401, "unknown name is refused")
+        s, j, _ = ben.post_json("/api/admin/login", {"name": "Ben", "pin": "5678"})
+        check(s == 200 and j["name"] == "Ben" and j["role"] == "staff", "named login works")
+        check(ben.get("/api/admin/me")[1]["name"] == "Ben", "session knows who is logged in")
+        check(ben.get("/api/admin/orders")[0] == 200, "staff can work with orders")
+        check(ben.get("/api/admin/staff")[0] == 403 and ben.get("/api/admin/pos")[0] == 403 and ben.get("/api/admin/backup")[0] == 403, "staff cannot manage accounts, see the POS key or the backups")
+        check(ben.post_json("/api/admin/pos/rotate", {})[0] == 403, "staff cannot rotate the POS key")
+        ben.post_json(f"/api/admin/orders/{first_id}", {"public_note": "Ben was here"}, method="PATCH")
+        oj = json.load(open(next(up.glob("*/001_*/order.json"))))
+        check(any(h["by"] == "Ben" for h in oj["history"]), "the order history names the real person (Ben)")
+        maria = Client(srv.base)
+        check(maria.post_json("/api/admin/login", {"name": "maria", "pin": "1234"})[1]["role"] == "owner", "names are not case-sensitive; owner role")
+        check(maria.post_json("/api/admin/staff/delete", {"name": "Maria"})[0] == 400, "cannot remove your own account")
+        s, j, _ = maria.post_json("/api/admin/staff/delete", {"name": "Ben"})
+        check(s == 200 and ben.get("/api/admin/orders")[0] == 401, "removing an account ends their session immediately")
+        check(c.post_json("/api/admin/staff", {"name": "Maria", "pin": "1234", "role": "staff"})[0] == 400, "the last owner cannot be demoted")
+
+        print("backups")
+        s, j, _ = maria.post_json("/api/admin/backup", {})
+        check(s == 200 and j["name"].startswith("portal-"), f"owner can make a backup ({j.get('name')})")
+        import zipfile as zf, sqlite3 as sq
+        z = zf.ZipFile(data / "backups" / j["name"])
+        names = z.namelist()
+        check("portal.db" in names and "staff.json" in names and "admin_pin.txt" not in names and not any("secret" in n or "pos_api_key" in n for n in names), f"backup holds the index + staff accounts, but no PIN/keys ({names})")
+        dbp = tmp / "restored.db"; dbp.write_bytes(z.read("portal.db"))
+        check(sq.connect(dbp).execute("select count(*) from orders").fetchone()[0] >= 6, "the backed-up index opens and has the orders")
+        s, body, _ = maria.get("/api/admin/backup/download", raw=True)
+        check(s == 200 and body[:2] == b"PK", "owner can download the latest backup")
+
+        print("warnings, GCash reference")
+        s, j, _ = c.post_form("/api/submit_order", [("customer_name", "Gina"), ("phone", ""), ("order_meta", json.dumps({"kind": "document"})), ("pay_ref", "GCASH 123-456 <b>!!")],
+                              [("files", "sheet.xls", b"\xd0\xcf\x11\xe0" + b"0" * 200), ("files", "ok.pdf", make_pdf(["bw"]))])
+        check(s == 200, "order with an old .xls and a GCash reference accepted")
+        d = next(up.glob(f"*/*Gina*")); oj = json.load(open(d / "order.json"))
+        check(oj["customer_pay_ref"] == "GCASH 123-456 b" and any("macros" in w for w in oj["warnings"]), f"reference cleaned ({oj['customer_pay_ref']!r}) and macro warning recorded")
+        check("GCASH 123-456" in (d / "instructions.txt").read_text() and "WARNING" in (d / "instructions.txt").read_text(), "staff see both in instructions.txt")
+        POS = {"Authorization": "Bearer " + open(data / "pos_api_key.txt").read().strip()}      # the key was rotated above
+        s, jd, _ = c.req("GET", f"/api/pos/orders/{j['order_id']}", headers=POS)
+        check(jd["customer_pay_ref"] == "GCASH 123-456 b" and jd["warnings"], "the POS receives the reference and the warning")
+
         print("behind Cloudflare Tunnel (requests carry CF-* headers)")
         H = {"CF-Connecting-IP": "203.0.113.5", "CF-Ray": "abc123", "X-Forwarded-Proto": "https"}
         check(c.req("GET", "/admin", headers=H, raw=True)[0] == 403, "/admin page is blocked for internet visitors")
@@ -195,6 +314,10 @@ def main():
         s, j, h = Client(srv.base).req("POST", "/api/admin/login", json.dumps({"pin": "123456"}).encode(), {"Content-Type": "application/json"})
         check(s == 200 and "Secure" not in h.get("Set-Cookie", ""), "…but not over plain http (so the shop Wi-Fi login still works)")
 
+        print("lock-out")
+        for _ in range(8): Client(srv.base).post_json("/api/admin/login", {"name": "Maria", "pin": "9999"})
+        check(Client(srv.base).post_json("/api/admin/login", {"name": "Maria", "pin": "1234"})[0] == 429, "repeated wrong PINs lock the account for a while")
+
         c.post_json("/api/admin/logout", {})
         check(c.get("/api/admin/orders")[0] == 401, "logout works")
         check(c.get("/nope")[0] == 404, "404 page")
@@ -213,6 +336,15 @@ def main():
         s, j, _ = order(c, "Ana", [("a.pdf", make_pdf(["bw"]))], {"kind": "document"})
         check(s == 503 and "offline" in j["detail"], "orders refused with 503 instead of landing on the local disk")
         check(not (tmp / "o2").exists(), "no stray folder created on the local disk")
+    finally:
+        srv.stop()
+
+    print("low disk space")
+    cfg3 = json.loads(json.dumps(cfg)); cfg3["limits"]["min_free_gb"] = 1e9; cfg3["limits"]["scan_command"] = ""
+    srv = Server(8128, tmp / "o4", tmp / "d4", config=cfg3)
+    try:
+        s, j, _ = order(Client(srv.base), "Ana", [("a.pdf", make_pdf(["bw"]))], {"kind": "document"})
+        check(s == 503 and "storage" in j["detail"], "orders are refused (clean message) when the disk is nearly full")
     finally:
         srv.stop()
 
