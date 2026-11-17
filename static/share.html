@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Send a link or file</title>
+<meta name="description" content="Send a Facebook post, Canva, Google Drive, OneDrive or WPS link, or a photo or file, to the print shop.">
+<meta name="theme-color" content="#2f5bea">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="JCM Prints">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><img src="/static/images/logo.jpg" alt="" width="34" height="34"><span data-shop-short>JCM Prints</span></a>
+  <a class="btn ghost small" href="/status" data-i18n="nav.status">My order</a>
+  <button class="langbtn" id="langBtn" type="button" aria-label="Language">FIL</button>
+</div></header>
+
+<main class="container stack">
+  <section class="card stack" id="introCard">
+    <h1 data-i18n="sh.title">Send a link or file</h1>
+    <p class="muted" data-i18n="sh.sub">Shared a Facebook post, Canva design, Google Drive / OneDrive / WPS file or any link? Check it below, add your name and send. The staff will open it at the counter and tell you the price.</p>
+    <div class="alert info small" data-i18n="sh.how">Tip: in Facebook, Messenger, Canva, Google Drive, OneDrive or WPS tap Share, then choose this app. Or copy the link and paste it here. Set the link to &ldquo;Anyone with the link can view&rdquo; so we can open it.</div>
+  </section>
+
+  <form id="shareForm" class="card stack" novalidate autocomplete="on">
+    <div>
+      <label for="shText" data-i18n="sh.link">Link(s) or message</label>
+      <textarea id="shText" maxlength="5000" data-i18n-ph="sh.link_ph" placeholder="https://www.canva.com/... or https://drive.google.com/..."></textarea>
+      <div class="row" style="margin-top:6px">
+        <button type="button" class="btn small outline" id="pasteBtn" data-i18n="sh.paste">Paste link</button>
+        <span class="small muted" id="linkCount"></span>
+      </div>
+      <ul id="linkList" class="files"></ul>
+    </div>
+
+    <div id="sharedFilesBox" class="hidden">
+      <label data-i18n="sh.files">Files you shared</label>
+      <ul id="fileList" class="files"></ul>
+    </div>
+    <div id="fileMsg" class="alert warn hidden" role="alert"></div>
+
+    <div>
+      <label class="drop" for="fileInput">
+        <div class="big" aria-hidden="true">&#128206;</div>
+        <div><b data-i18n="sh.add">Add photos or files (optional)</b></div>
+        <div class="sub" data-i18n="sh.add_sub">PDF, Word, Excel, PowerPoint or photos.</div>
+        <input id="fileInput" class="sr-only" type="file" multiple
+          accept="image/*,.pdf,.heic,.heif,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf,.txt,.csv">
+      </label>
+    </div>
+
+    <div>
+      <label for="custName" data-i18n="print.name">Your name</label>
+      <input id="custName" type="text" maxlength="60" autocomplete="name" data-i18n-ph="print.name_ph" placeholder="e.g. Juan Dela Cruz" required>
+    </div>
+    <div>
+      <label for="custPhone" data-i18n="sh.phone">Mobile number (so we can reach you if a link needs permission)</label>
+      <input id="custPhone" type="tel" maxlength="20" autocomplete="tel" inputmode="tel" placeholder="09xx xxx xxxx">
+    </div>
+    <div>
+      <label for="notes" data-i18n="sh.notes">What should we print? (size, copies, color, paper)</label>
+      <textarea id="notes" maxlength="1000" data-i18n-ph="sh.notes_ph" placeholder="e.g. 4R photo x 3 copies, long bond, B&amp;W"></textarea>
+    </div>
+
+    <div id="formErr" class="alert bad hidden" role="alert"></div>
+    <div id="upProgress" class="hidden"><div class="small" id="upText"></div><div class="progress"><i id="upBar"></i></div></div>
+    <button class="btn block" id="submitBtn" type="submit" data-i18n="print.send">Send to the shop</button>
+    <button class="btn ghost block hidden" id="discardBtn" type="button" data-i18n="sh.discard">Clear shared items</button>
+  </form>
+
+  <section class="card stack hidden" id="result" aria-live="polite">
+    <h1 data-i18n="result.title">&#9989; Order sent!</h1>
+    <p data-i18n="sh.done">We got it. The staff will open your link at the counter and confirm the price.</p>
+    <div class="small muted" data-i18n="result.code">Your code</div>
+    <div><span class="codebox" id="resCode"></span></div>
+    <p class="small muted" data-i18n="sh.keep">Keep this code - you can also look up your order by typing your name.</p>
+    <a class="btn block" id="resStatus" href="/status" data-i18n="result.track">Check my order status</a>
+    <button type="button" class="btn outline block hidden" id="resShare" data-i18n="sh.sharecode">Share my code</button>
+    <button type="button" class="btn ghost block" id="againBtn" data-i18n="result.again">Send another order</button>
+  </section>
+</main>
+<div class="footer"><span data-shop-name></span></div>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/i18n.js"></script>
+<script src="/static/js/share.js"></script>
+</body>
+</html>

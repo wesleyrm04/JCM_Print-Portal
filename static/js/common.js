@@ -93,6 +93,23 @@
     $$('[data-shop-email]').forEach(e => { if (s.email) { e.href = 'mailto:' + s.email; e.textContent = s.email; } else (e.closest('[data-if-email]') || e).hidden = true; });
   }
 
+
+  // ---------- install on the home screen + service worker (needs https; the plain shop-Wi-Fi address just skips this)
+  const inst = { evt: null };
+  w.addEventListener('beforeinstallprompt', e => { e.preventDefault(); inst.evt = e; document.dispatchEvent(new Event('jcm-install-ready')); });
+  w.addEventListener('appinstalled', () => { inst.evt = null; document.dispatchEvent(new Event('jcm-installed')); });
+  function isStandalone() { return (w.matchMedia && w.matchMedia('(display-mode: standalone)').matches) || w.navigator.standalone === true; }
+  function isIOS() { const ua = navigator.userAgent || ''; return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  async function promptInstall() {
+    if (!inst.evt) return false;
+    const e = inst.evt; inst.evt = null;
+    try { e.prompt(); const c = await e.userChoice; return !!c && c.outcome === 'accepted'; } catch (er) { return false; }
+  }
+  w.JCMInstall = { ready: () => !!inst.evt, prompt: promptInstall, isStandalone, isIOS };
+  const swOk = 'serviceWorker' in navigator && !location.pathname.startsWith('/admin') &&
+    (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  if (swOk) w.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* not fatal */ }); });
+
   w.$ = $; w.$$ = $$; w.peso = peso; w.esc = esc; w.fmtBytes = fmtBytes; w.store = store;
   w.getConfig = getConfig; w.toast = toast; w.openDialog = openDialog; w.closeDialog = closeDialog;
   w.uploadWithRetry = uploadWithRetry; w.rememberOrder = rememberOrder; w.fillShop = fillShop;

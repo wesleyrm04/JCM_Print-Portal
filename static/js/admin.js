@@ -118,6 +118,11 @@
         '<div class="grow"><div style="word-break:break-all">' + esc(f.name) + '</div><div class="small muted">' + fmtBytes(f.size) + '</div></div>' +
         '<a class="btn small outline" href="' + url + '" download>Download</a>' + (ext === 'pdf' ? ' <a class="btn small ghost" target="_blank" href="' + url + '?inline=1">Open</a>' : '') + '</li>';
     }).join('');
+    const info = d.links_info || (d.links || []).map(u => ({ url: u, label: 'Link', known: true }));
+    const links = info.filter(x => /^https?:\/\//i.test(x.url)).map(x => { const u = x.url;
+      return '<li style="margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge ' + (x.known ? 'ok' : 'warn') + '">' + esc(x.label) + '</span>' +
+        '<a class="grow" style="word-break:break-all" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(u) + '</a></li>';
+    }).join('');
     const sts = (o.statuses || []).map(s => '<button type="button" class="chip" data-st="' + esc(s) + '" aria-pressed="' + (s === o.status) + '">' + esc(s) + '</button>').join('');
     $id('detail').innerHTML =
       '<div class="row spread"><h2 style="margin:0">' + esc(o.id) + '</h2><span class="badge ' + badgeCls(o) + '">' + esc(o.status) + '</span></div>' +
@@ -130,6 +135,7 @@
       (d.review_notes && d.review_notes.length ? '<div class="alert warn small"><b>Please check:</b><br>' + d.review_notes.map(esc).join('<br>') + '</div>' : '') +
       (d.customer_pay_ref ? '<div class="alert warn small"><b>Customer says they paid by GCash.</b> Reference: <b>' + esc(d.customer_pay_ref) + '</b> - check it in your GCash app before you mark it paid.</div>' : '') +
       (d.warnings && d.warnings.length ? '<div class="alert bad small"><b>Warning:</b><br>' + d.warnings.map(esc).join('<br>') + '</div>' : '') +
+      (links ? '<h3>Shared links</h3><ul style="list-style:none;padding:0;margin:0">' + links + '</ul>' : '') +
       (d.instructions ? '<h3>Customer notes</h3><div class="alert info" style="white-space:pre-wrap">' + esc(d.instructions) + '</div>' : '') +
       '<h3>Files' + (o.files_deleted ? ' (deleted after retention period)' : '') + '</h3><ul style="list-style:none;padding:0;margin:0">' + files + '</ul>' +
       '<div class="row" style="margin:10px 0"><a class="btn small" href="' + base + '/zip">Download all (zip)</a> <a class="btn small outline" target="_blank" href="/admin/slip/' + encodeURIComponent(id) + '?print=1">Print slip</a></div>' +
@@ -169,8 +175,9 @@
   // ---------- tabs, summary, tools
   document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-pressed', x === b));
-    ['orders', 'summary', 'tools'].forEach(t => $id('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+    ['orders', 'summary', 'catalog', 'tools'].forEach(t => $id('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
     if (b.dataset.tab === 'summary') loadSummary(); if (b.dataset.tab === 'tools') loadTools();
+    if (b.dataset.tab === 'catalog' && window.JCMCatalogAdmin) window.JCMCatalogAdmin.open();
   }));
   async function loadSummary() {
     const f = $id('sFrom').value, t = $id('sTo').value, qs = new URLSearchParams({ from: f, to: t });

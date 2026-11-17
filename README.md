@@ -4,8 +4,8 @@ Customers join the shop Wi-Fi - **even the Piso WiFi without inserting a coin** 
 and send documents / photos / ID pictures straight to your counter. Nothing is loaded from the
 internet: no CDN, no web fonts, no remote images. If the internet is down, the portal still works.
 
-Pages: `/` home · `/print` send files · `/status` customer order tracking · `/repair` · `/souvenirs` ·
-`/admin` staff dashboard.
+Pages: `/` home · `/print` send files · `/share` send from Facebook · `/status` customer order tracking (by code or name) ·
+`/repair` · `/souvenirs` · `/admin` staff dashboard.
 
 ## Upgrading from an earlier version (overwriting is fine - keep these 3 things)
 
@@ -37,6 +37,11 @@ folder across, then `venv/bin/pip install --no-index --find-links wheels -r requ
 sudo venv/bin/python server.py          # port 80  ->  http://<server-ip>/
 # or without root:  JCM_PORT=8080 venv/bin/python server.py   ->  http://<server-ip>:8080/
 ```
+**Several ports at once:** put them in a comma list, e.g. `sudo JCM_PORT=80,1013 venv/bin/python server.py` (Windows:
+`set JCM_PORT=80,1013` then `python server.py`). It is the same portal and the same data on every port - handy when the Piso WiFi
+only allows one port, or so you can reach it as `http://<server-ip>/` and `http://<server-ip>:1013/`. Open each port in the firewall
+(and whitelist each one in the Piso WiFi software). Ports below 1024 (like 80) need root / Administrator, and the port must not be
+used by another program (IIS, Apache, Skype...). The service file now starts on `80,1013`.
 Auto-start on boot: see `jcm-portal.service`.
 
 First run creates the **staff PIN** in `data/admin_pin.txt` (or set `JCM_ADMIN_PIN`). Open `/admin`.
@@ -144,6 +149,70 @@ put Cloudflare Access in front of the domain if you ever enable `admin.allow_rem
   for their GCash reference. Staff and the cashier see it with a reminder to verify it - it never marks an order paid.
 - **Warnings**: old `.doc/.xls/.ppt` files (which can carry macros) are accepted but flagged for staff and the cashier.
 
+## 3g. Link / file sharing (Facebook, Canva, Google Drive, OneDrive, WPS...), install on the phone, finding an order by code or name
+
+**Send from Facebook (`/share`).** A customer can hand you a Facebook post, a Messenger photo or any file with the phone's
+*Share* button, or paste a copied link on `/share`. It becomes an order titled *Shared from Facebook* (or *Shared Items*) with
+the links and files saved in the order folder (`instructions.txt` lists the links). The portal **cannot open a Facebook link
+itself** (Facebook needs a login and the portal may be offline), so staff open the link on the shop computer; the order is always
+flagged *check price* and you set the final price. In the staff order view the links show as buttons; links that are not
+Facebook/Messenger/Instagram get a yellow *Other site* tag and a warning, because a stranger can send anything - open those with care.
+
+**Which links work.** Any http(s) link is accepted. Links from known services are labelled for staff and raise no warning:
+Facebook/Messenger/Instagram, **Canva, Google Drive/Docs/Sheets/Slides/Photos, OneDrive/SharePoint, WPS (kdocs/wps.com), Dropbox, iCloud, MEGA, Box,
+WeTransfer, Notion, Figma, Adobe, Pinterest, TikTok, YouTube, Telegram, Viber, WhatsApp, Shopee, Lazada**. Anything else is tagged
+*Other site* with a warning. To add a service, add a line to `SERVICES` in `portal/sharing.py` (no other change needed).
+Cloud/design links (Canva, Drive, OneDrive, WPS, Dropbox...) only open if the customer set them to "Anyone with the link can view";
+the order shows a reminder, and the share page asks for a mobile number so you can ask them to fix the permission.
+
+**Install on the home screen.** The portal is now an installable web app (`/manifest.webmanifest`, `/sw.js`, icons in
+`static/icons/`). The home page shows an *Install* card.
+- **Android (Chrome / Samsung Internet):** tap *Install app* (not just "Add shortcut"). After installing, **JCM Prints appears in the
+  Share menu** of Facebook, Messenger, Gallery and Files, and opens `/share` with the link/photos already filled in.
+- **iPhone / iPad:** Safari -> Share -> *Add to Home Screen*. iOS does **not** allow web apps in the Share menu, so iPhone users copy
+  the Facebook link and tap *Paste link* on `/share`.
+- **Needs https.** Browsers only install apps and run service workers on https, so this works on your tunnel address
+  (e.g. `https://jcm-gcs.nx1.lol`), **not** on the plain shop-Wi-Fi address `http://<server-ip>/` (customers there simply do not see
+  the install card; everything else keeps working). Set `shop.public_url` in `config.json` to the https address - the home page
+  points people to it.
+- The service worker fetches pages from the network first and only uses its saved copy when the network fails, so your updates
+  show up immediately. `/api` and `/admin` are never cached. To force phones to drop an old copy after a big change, change
+  `SHELL = 'jcm-shell-v1'` in `static/sw.js` to `v2`.
+
+**Order status by code or name (`/status`).** The order-number box is gone. Customers type their **6-letter code** (shows everything:
+status, price, paid, your message) **or their name** (shows only the status, with the surname shortened to an initial - *Juan C.* - and no
+price, no staff message, no order number). Name search looks at orders from the last 14 days, needs 3+ letters, and misses are
+rate-limited. Old links `/status?o=NUMBER&c=CODE` and the older API `/api/status?id=..&code=..` still work. Staff can also search the
+dashboard by code. In `config.json` (all optional):
+```json
+"status": {"name_search": true, "name_search_days": 14, "name_search_max_results": 8, "name_search_min_chars": 3},
+"share":  {"enabled": true, "max_links": 10}
+```
+Set `"name_search": false` if you only want code lookups; `"share": {"enabled": false}` hides the Facebook option.
+The printed slip now shows the code (and says the name works too).
+
+## 3h. Editing the Souvenirs gallery and the Tech-Repair services (staff dashboard > Catalog)
+
+Open **/admin > Catalog**. Nothing changes for customers until you press **Save changes** (a bar at the top shows "Unsaved changes").
+
+**Souvenirs**
+- **+ Add pictures** on any product (several at once, up to 12 per product). Pictures are checked, shrunk and stored in
+  `data/catalog_images/`. The first picture is the cover; the yellow star makes another one the cover; the red x removes one.
+  Customers tap a product to flip through all its pictures.
+- **In stock** unticked = the product disappears from the customer page (it stays in the editor so you can tick it again).
+  The red **Delete** removes it for good. Tick *Still show out-of-stock products* if you prefer customers to see them greyed out
+  with an "Out of stock" tag. A category with nothing in stock is hidden automatically.
+- Add, rename, reorder or hide whole categories; add an optional price note per product; edit the "What do you want?" choices of the order form.
+
+**Tech repair**
+- Add or remove services (name, price text, notes) in each section, hide a single service with **Offered**, reorder, or add whole new sections.
+- A **Mobile Services** section is already there but **switched off**. Check its placeholder prices ("Ask us"), tick **Show** and save to publish
+  it - "Mobile phone / Tablet" is then added to the device list of the repair request form automatically.
+
+Good to know: the original page content is the starting point (nothing is lost). The catalog is saved in `data/catalog.json` (the one
+before the last save is kept as `catalog.prev.json`) and is included in the nightly backup together with the pictures. If the file is ever
+damaged the pages fall back to the built-in content. Tests: `tests/test_catalog.py`, `tests/test_api_catalog.py`.
+
 ## 4. Where orders go
 
 `config.json -> storage`: `upload_dir` (default `/mnt/nas_spool/customer_orders`) and `mount_point`
@@ -178,6 +247,7 @@ Customer files are deleted `retention.days` (default 14) after an order is Compl
 ## 8. Tests
 
 `./run_tests.sh` - logic, JS-vs-Python layout agreement, full server API, and real-browser tests.
+The sharing / status-search tests are `tests/test_share.py` (logic) and `tests/test_api_share.py` (server).
 
 ## Known limits
 
@@ -185,3 +255,5 @@ Customer files are deleted `retention.days` (default 14) after an order is Compl
 - Customers with HEIC photos on non-Apple phones cannot preview them; those are sent as-is and
   flagged for staff to place by hand.
 - No online payments; GCash number is shown for manual payment only.
+- Shared Facebook links are not fetched or previewed by the portal; staff open them. Videos are not accepted as files (the link is enough).
+- iPhone cannot add the app to its Share menu (Apple does not allow it) - use *Paste link*.

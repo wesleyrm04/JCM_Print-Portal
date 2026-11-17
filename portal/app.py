@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
@@ -29,12 +29,12 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Redire
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, backup, db, docgen, pricing, settings, storage
+from . import auth, backup, catalog, db, docgen, pricing, settings, sharing, storage
 
 STATIC = settings.BASE_DIR / "static"
 log = logging.getLogger("jcm")
 ID_RE = re.compile(r"^(?:[RS]-)?\d{8}-\d{3,4}$")
-CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+CODE_ALPHABET = sharing.CODE_ALPHABET
 LEGACY_OFFICE = {"doc", "xls", "ppt"}
 LAYOUT_PDFS = {"photo": "Generated_Photo_Layout.pdf", "rushid": "Generated_RushID_Layout.pdf"}
 
@@ -144,7 +144,7 @@ class SecurityMiddleware:
             resp = JSONResponse({"detail": f"Your upload is too big (limit {limit_mb} MB in total)."}, status_code=413)
             return await resp(scope, receive, send)
         path = scope["path"]
-        if scope["method"] in ("POST", "PUT", "PATCH", "DELETE") and self._cross_site(hdrs):
+        if scope["method"] in ("POST", "PUT", "PATCH", "DELETE") and path != "/share" and self._cross_site(hdrs):
             resp = JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
             return await resp(scope, receive, send)
 
@@ -172,6 +172,112 @@ async def admin_page(request: Request):
     if not admin_allowed(request):
         return HTMLResponse(f"<h1>{REMOTE_MSG}</h1>", status_code=403)
     return FileResponse(STATIC / "admin.html")
+
+
+async def share_entry(request: Request):
+    """The phone's Share button opens /share.  Normally the service worker handles the POST (it keeps shared files
+    in the browser); this is the fallback when it is not active yet: keep the text, drop big file uploads."""
+    if request.method == "POST":
+        text = {}
+        try:
+            cl = int(request.headers.get("content-length", "0") or 0)
+        except ValueError:
+            cl = 0
+        if 0 < cl <= 200_000:
+            try:
+                async with request.form(max_files=5, max_fields=10) as form:
+                    text = {k: str(v)[:1500] for k, v in form.multi_items() if k in ("title", "text", "url") and isinstance(v, str)}
+            except Exception:
+                text = {}
+        return RedirectResponse("/share" + ("?" + urlencode(text) if text else ""), status_code=303)
+    return FileResponse(STATIC / "share.html")
+
+
+async def web_manifest(request: Request):
+    shop = settings.get_config()["shop"]
+    data = {
+        "id": "/", "name": shop["name"], "short_name": shop["short_name"][:12] or "JCM",
+        "description": shop["tagline"], "lang": "en", "dir": "ltr",
+        "start_url": "/?source=app", "scope": "/", "display": "standalone", "orientation": "portrait",
+        "background_color": "#ffffff", "theme_color": "#2f5bea", "categories": ["business", "utilities"],
+        "icons": [
+            {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/static/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+        "shortcuts": [
+            {"name": "Send files to print", "short_name": "Print", "url": "/print", "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]},
+            {"name": "Send a Facebook link", "short_name": "Facebook", "url": "/share", "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]},
+            {"name": "Check my order", "short_name": "My order", "url": "/status", "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]},
+        ],
+        # Makes the app appear in the Android Share menu (Facebook, Messenger, Gallery, Files ...)
+        "share_target": {
+            "action": "/share", "method": "POST", "enctype": "multipart/form-data",
+            "params": {"title": "title", "text": "text", "url": "url",
+                       "files": [{"name": "files", "accept": [
+                           "image/*", "application/pdf", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+                           ".odt", ".ods", ".odp", ".rtf", ".txt", ".csv"]}]},
+        },
+    }
+    return JSONResponse(data, media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
+
+
+async def service_worker(request: Request):
+    return FileResponse(STATIC / "sw.js", media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
+# ---------------------------------------------------------------- catalog (souvenirs gallery + repair services)
+async def api_catalog(request: Request):
+    """What customers see: hidden / out-of-stock / switched-off things are already removed."""
+    cat = await run_in_threadpool(catalog.load, settings.data_dir())
+    return JSONResponse(catalog.public_view(cat), headers={"Cache-Control": "no-cache"})
+
+
+async def media_file(request: Request):
+    name = request.path_params["name"]
+    if not catalog.MEDIA_NAME_RE.match(name):
+        return jerr(404, "Not found.")
+    f = catalog.images_dir(settings.data_dir()) / name
+    if not f.is_file():
+        return jerr(404, "Not found.")
+    return FileResponse(f, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+async def admin_catalog_get(request: Request):
+    require_admin(request)
+    cat = await run_in_threadpool(catalog.load, settings.data_dir())
+    return JSONResponse(cat)
+
+
+async def admin_catalog_save(request: Request):
+    me = require_admin(request)
+    try:
+        body = await request.json()
+        new = await run_in_threadpool(catalog.save, settings.data_dir(), body)
+    except catalog.Conflict as e:
+        return jerr(409, str(e))
+    except (ValueError, TypeError):
+        return jerr(400, "Bad request.")
+    log.info("catalog saved by %s (revision %s)", me["name"], new[catalog.REV_KEY])
+    return JSONResponse(new)
+
+
+async def admin_catalog_image(request: Request):
+    me = require_admin(request)
+    try:
+        async with request.form(max_files=1, max_fields=2) as form:
+            up = form.get("file")
+            if up is None or not hasattr(up, "read"):
+                return jerr(400, "Choose a picture.")
+            raw = await up.read(catalog.MAX_UPLOAD + 1)
+        url = await run_in_threadpool(catalog.save_image, settings.data_dir(), raw)
+    except ValueError as e:
+        return jerr(400, str(e))
+    except Exception:
+        return jerr(400, "Could not read that picture.")
+    log.info("catalog picture added by %s: %s", me["name"], url)
+    return JSONResponse({"url": url, "thumb": url.replace(".jpg", "_t.jpg")})
 
 
 async def favicon(request: Request):
@@ -426,6 +532,20 @@ def _price_ticket(kind, meta, fields):
     return label, 0.0, [], clean, False, [], "\n".join(lines)
 
 
+def _price_share(links, saved):
+    """Links / files shared from Facebook or another app. The portal cannot know what the customer wants
+    printed, so the order is always flagged for staff to open the link(s) and quote the price."""
+    preset = sharing.preset_for(links, len(saved))
+    notes = ["Shared from the phone's Share button: open the link(s) / files, then confirm what to print and the price."]
+    notes += sharing.access_hints(links)
+    labels = sorted({sharing.service_label(u) for u in links})
+    opts = {"shared_from": ", ".join(labels) if labels else "Share button"}
+    extra = ""
+    if links:
+        extra = "LINKS SHARED BY THE CUSTOMER (open them on the shop computer):\n" + "\n".join(f"- [{sharing.service_label(u)}] {u}" for u in links)
+    return preset, 0.0, [], opts, True, notes, extra
+
+
 def _scan_files(folder: Path, saved: list, cfg) -> list:
     """Optional antivirus hook. Exit code 1 (e.g. clamscan 'infected') rejects the order; any other failure is
     logged and flagged for staff but does not block customers."""
@@ -478,7 +598,14 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
         raise ApiError(400, f"Maximum {lim['max_files_per_order']} files allowed per order.")
     if ticket and len(uploads) > 5:
         raise ApiError(400, "Please attach at most 5 reference photos.")
-    if not ticket and kind != "typed" and not uploads:
+    links = []
+    if kind == "share":
+        if not cfg["share"]["enabled"]:
+            raise ApiError(400, "Sharing is switched off. Please use the Print page.")
+        links = sharing.collect_links(fields.get("shared_text"), meta.get("links"), int(cfg["share"]["max_links"]))
+        if not links and not uploads:
+            raise ApiError(400, "Please share a link or add at least one file.")
+    elif not ticket and kind != "typed" and not uploads:
         raise ApiError(400, "Please select at least one file to upload.")
     allowed = pricing.IMAGE_EXT if ticket else storage.ALLOWED_EXT
     for up in uploads:
@@ -512,7 +639,7 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
         # provisional preset for the folder name; real one is set after pricing
         provisional = {"document": "Standard Document Print", "photo": "Photo Print Layout",
                        "rushid": "Rush ID", "typed": "Typed Document", "repair": "Repair Request",
-                       "souvenir": "Souvenir Inquiry"}[kind]
+                       "souvenir": "Souvenir Inquiry", "share": "Shared Items"}[kind]
         folder = date_folder / storage.folder_name(prefix, number, name, provisional)
         folder.mkdir(parents=True, exist_ok=False)
 
@@ -533,6 +660,8 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
             preset, total, lines, opts, review, notes = _price_rush(meta, saved, cfg, folder)
         elif kind == "typed":
             preset, total, lines, opts, review, notes = _price_typed(fields, meta, cfg, folder, saved)
+        elif kind == "share":
+            preset, total, lines, opts, review, notes, extra_instr = _price_share(links, saved)
         else:
             preset, total, lines, opts, review, notes, extra_instr = _price_ticket(kind, meta, fields)
 
@@ -545,6 +674,8 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
             instructions = (extra_instr + ("\n\nNotes: " + instructions if instructions else "")).strip()
         if kind == "document" and opts.get("duplex"):
             instructions = ("[Two-sided printing requested]\n" + instructions).strip()
+        if links:
+            warnings.extend(sharing.link_warnings(links))
 
         # rename folder to include the real preset
         final_folder = date_folder / storage.folder_name(prefix, number, name, preset)
@@ -575,6 +706,9 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
             "folder": str(folder), "files_deleted": False,
             "warnings": warnings, "customer_pay_ref": pay_ref,
         }
+        if links:
+            order["links"] = links
+            order["links_info"] = sharing.link_info(links)
         storage.write_instructions(folder, order)
         storage.write_json_atomic(folder / "order.json", order)
     except Exception:
@@ -615,6 +749,61 @@ async def api_submit(request: Request):
     except Exception:
         log.exception("could not read upload")
         return jerr(400, "The upload could not be read. Please try again.")
+    return JSONResponse(res)
+
+
+def _status_payload(row, full=True):
+    """What the customer may see. full=False (name search) leaves out the price, the staff message and the order number."""
+    cat = row["category"]
+    steps = [x for x in settings.STATUSES[cat] if x != "Cancelled"]
+    d = row["data"] or {}
+    out = {
+        "category": cat, "kind": row["kind"], "preset": row["preset"],
+        "status": row["status"], "steps": steps,
+        "step": steps.index(row["status"]) if row["status"] in steps else -1,
+        "created": row["created"], "updated": row["updated"],
+        "ahead": db.queue_ahead(row["id"]) if row["status"] in ("Pending", "Printing") else 0,
+    }
+    if full:
+        out.update({"id": row["id"], "paid": row["paid"], "total": row["total"],
+                    "public_note": d.get("public_note", ""), "first_name": (row["name"] or "").split(" ")[0],
+                    "files_deleted": row["files_deleted"], "limited": False})
+    else:
+        out.update({"first_name": sharing.mask_name(row["name"]), "limited": True})
+    return out
+
+
+def _find_status(q: str):
+    cfg = settings.get_config()
+    st = cfg["status"]
+    code = sharing.normalize_code(q)
+    if code:
+        rows = db.find_by_code(code)
+        if rows:
+            return {"mode": "code", "results": [_status_payload(r, True) for r in rows]}
+    if not st["name_search"]:
+        return {"mode": "code", "results": []}
+    tokens = sharing.name_tokens(q)
+    if not tokens or len(" ".join(tokens)) < int(st["name_search_min_chars"]):
+        return {"mode": "name", "results": [], "too_short": True}
+    since = (settings.now() - timedelta(days=int(st["name_search_days"]))).strftime("%Y-%m-%d")
+    rows = db.find_by_name(tokens, since, int(st["name_search_max_results"]))
+    return {"mode": "name", "results": [_status_payload(r, False) for r in rows]}
+
+
+async def api_status_find(request: Request):
+    """Customer search: ?q=<order code or sender name>."""
+    ip = client_ip(request)
+    if not auth.limiter.allow("find:" + ip, 40, 60):
+        return jerr(429, "Too many requests - please wait a moment.")
+    q = request.query_params.get("q", "").strip()[:60]
+    if not q:
+        return jerr(400, "Please type your order code or your name.")
+    res = await run_in_threadpool(_find_status, q)
+    if not res["results"] and not res.get("too_short"):
+        # guessing codes / names: only misses count towards a stricter limit
+        if not auth.limiter.allow("findmiss:" + ip, 25, 600):
+            return jerr(429, "Too many searches that found nothing. Please wait a few minutes.")
     return JSONResponse(res)
 
 
@@ -863,7 +1052,7 @@ def _slip_html(row, base_url: str) -> str:
 <p>{e(row['preset'])}</p><ul>{lines}</ul>
 <p class="slip-total">Total: PHP {row['total']:,.2f}{' (to be confirmed)' if row['needs_review'] else ''}</p>
 <p>{'PAID' if row['paid'] else 'UNPAID'} {e(row['pay_method'])}</p>{note}
-<hr><p>Check your order status:<br><b>{e(base_url)}/status</b><br>Order: <b>{e(row['id'])}</b> &nbsp; Code: <b>{e(row['code'])}</b></p>
+<hr><p>Check your order status:<br><b>{e(base_url)}/status</b><br>Code: <b>{e(row['code'])}</b> &nbsp; (or search your name)</p>
 <p class="no-print"><button id="printBtn">Print</button></p>
 <script src="/static/js/slip.js"></script></body></html>"""
 
@@ -1170,11 +1359,16 @@ routes = [
     Route("/", page("index.html")), Route("/print", page("print.html")),
     Route("/souvenirs", page("souvenirs.html")), Route("/repair", page("repair.html")),
     Route("/status", page("status.html")), Route("/admin", admin_page),
+    Route("/share", share_entry, methods=["GET", "POST"]),
+    Route("/manifest.webmanifest", web_manifest), Route("/sw.js", service_worker),
+    Route("/api/catalog", api_catalog), Route("/media/{name}", media_file),
+    Route("/api/admin/catalog", admin_catalog_get), Route("/api/admin/catalog", admin_catalog_save, methods=["PUT"]),
+    Route("/api/admin/catalog/image", admin_catalog_image, methods=["POST"]),
     Route("/favicon.ico", favicon), Route("/health", api_health),
     Route("/api/config", api_config), Route("/api/estimate", api_estimate, methods=["POST"]),
     Route("/api/typed/estimate", api_typed_estimate, methods=["POST"]),
     Route("/api/submit_order", api_submit, methods=["POST"]),
-    Route("/api/status", api_status),
+    Route("/api/status", api_status), Route("/api/status/find", api_status_find),
     Route("/api/admin/login", api_login, methods=["POST"]), Route("/api/admin/logout", api_logout, methods=["POST"]),
     Route("/api/admin/me", api_me), Route("/api/admin/staff-names", api_staff_names),
     Route("/api/admin/staff", admin_staff_list, methods=["GET"]), Route("/api/admin/staff", admin_staff_save, methods=["POST"]),

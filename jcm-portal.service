@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=/opt/print-portal
 ExecStart=/opt/print-portal/venv/bin/python server.py
-Environment=JCM_PORT=1013
+Environment=JCM_PORT=80,1013
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 User=root
 Restart=always

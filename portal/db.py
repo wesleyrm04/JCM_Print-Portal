@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 CREATE INDEX IF NOT EXISTS ix_orders_date ON orders(date);
 CREATE INDEX IF NOT EXISTS ix_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS ix_orders_code ON orders(code);
 """
 
 
@@ -96,8 +97,8 @@ def search(date=None, status=None, category=None, q=None, limit=200, offset=0):
         where.append("category=?"); args.append(category)
     if q:
         like = f"%{q.strip()}%"
-        where.append("(id LIKE ? OR name LIKE ? OR phone LIKE ? OR preset LIKE ?)")
-        args += [like] * 4
+        where.append("(id LIKE ? OR name LIKE ? OR phone LIKE ? OR preset LIKE ? OR code LIKE ?)")
+        args += [like] * 5
     sql = "SELECT * FROM orders" + (" WHERE " + " AND ".join(where) if where else "")
     sql += " ORDER BY created DESC LIMIT ? OFFSET ?"
     with closing(connect()) as c:
@@ -196,3 +197,34 @@ def queue_ahead(order_id: str) -> int:
             return 0
         return c.execute("SELECT COUNT(*) n FROM orders WHERE category='print' AND date=? AND created<? "
                          "AND status IN ('Pending','Printing')", (r["date"], r["created"])).fetchone()["n"]
+
+
+def find_by_code(code: str, limit: int = 5):
+    """Orders with this access code (normally exactly one), newest first, with their full data."""
+    if not _inited:
+        init()
+    with closing(connect()) as c:
+        rows = c.execute("SELECT * FROM orders WHERE code=? COLLATE NOCASE ORDER BY created DESC LIMIT ?",
+                         ((code or "").strip(), int(limit))).fetchall()
+    return [_to_dict(r) for r in rows]
+
+
+def _like_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def find_by_name(tokens, date_from: str, limit: int = 8):
+    """Recent orders whose customer name contains every word in `tokens` (case-insensitive)."""
+    if not _inited:
+        init()
+    if not tokens:
+        return []
+    where = ["date >= ?"]
+    args = [date_from]
+    for t in tokens:
+        where.append("name LIKE ? ESCAPE '\\'")
+        args.append(f"%{_like_escape(t)}%")
+    sql = "SELECT * FROM orders WHERE " + " AND ".join(where) + " ORDER BY created DESC LIMIT ?"
+    with closing(connect()) as c:
+        rows = c.execute(sql, args + [int(limit)]).fetchall()
+    return [_to_dict(r) for r in rows]

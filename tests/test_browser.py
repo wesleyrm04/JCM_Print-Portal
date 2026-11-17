@@ -90,10 +90,10 @@ def main():
 
             print("status page")
             page.click("#resStatus")
-            page.wait_for_selector("#out:not(.hidden)")
-            check(oid in page.inner_text("#oId") and "Pending" in page.inner_text("#oBadge"), "status page shows the order as Pending")
+            page.wait_for_selector("#results .card")
+            check("Pending" in page.inner_text("#results") and "Juan" in page.inner_text("#results"), "status page (opened by code only) shows the order as Pending")
             page.click("#langBtn")
-            check(page.inner_text("#oBadge") == "Naghihintay", "Filipino toggle translates the status")
+            check("Naghihintay" in page.inner_text("#results"), "Filipino toggle translates the status")
             page.click("#langBtn")
 
             print("photo layout flow")
@@ -191,8 +191,8 @@ def main():
 
             print("customer sees the staff update")
             page.goto(f"{base}/status?o={oid}&c={code}")
-            page.wait_for_selector("#out:not(.hidden)")
-            check("Almost done!" in page.inner_text("#oNote") and "Paid" in page.inner_text("#oPay"), "status page shows staff message and paid state")
+            page.wait_for_selector("#results .card")
+            check("Almost done!" in page.inner_text("#results") and "Paid" in page.inner_text("#results"), "status page shows staff message and paid state")
             br.close()
     finally:
         out = srv.stop()

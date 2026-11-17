@@ -4,6 +4,8 @@
   let cfg = null;
   try { cfg = await getConfig(); fillShop(cfg); } catch (e) { /* page still works without prices */ }
 
+  if (cfg && cfg.share && cfg.share.enabled === false) { const fc = document.getElementById('fbCard'); if (fc) fc.hidden = true; }
+
   function facts() {
     if (!cfg) return;
     const r = cfg.rates, rush = cfg.rush_id.packages;
@@ -30,6 +32,27 @@
     setInterval(() => { imgs[i].classList.remove('on'); i = (i + 1) % imgs.length; imgs[i].classList.add('on'); }, 3500);
   }
 
+
+  // install card: Android button / iPhone steps / "use the https address" when opened on the plain shop address
+  function installCard() {
+    const card = document.getElementById('installCard');
+    if (!card || !window.JCMInstall || JCMInstall.isStandalone()) return;
+    const show = id => { document.getElementById(id).hidden = false; card.hidden = false; };
+    ['installAndroid', 'installIos', 'installMenu', 'installHttp'].forEach(id => { document.getElementById(id).hidden = true; });
+    if (!window.isSecureContext) {
+      const pub = cfg && cfg.shop && cfg.shop.public_url;
+      if (pub) { const a = document.getElementById('installUrl'); a.href = pub; a.textContent = pub; show('installHttp'); }
+      return;
+    }
+    if (JCMInstall.ready()) show('installAndroid');
+    else if (JCMInstall.isIOS()) show('installIos');
+    else show('installMenu');
+  }
+  document.addEventListener('jcm-install-ready', installCard);
+  document.addEventListener('jcm-installed', () => { const c = document.getElementById('installCard'); if (c) c.hidden = true; });
+  const ib = document.getElementById('installBtn');
+  if (ib) ib.addEventListener('click', async () => { if (await JCMInstall.prompt()) document.getElementById('installCard').hidden = true; else installCard(); });
+
   I18N.onChange(() => { facts(); recent(); });
-  I18N.apply(); facts(); recent();
+  I18N.apply(); facts(); recent(); installCard();
 })();

@@ -6,6 +6,11 @@
 <title>Tech Repair Services</title>
 <meta name="description" content="Computer and laptop repair rates, and a request form you can fill in over the shop Wi-Fi.">
 <meta name="theme-color" content="#2f5bea">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="JCM Prints">
 <link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
@@ -22,6 +27,7 @@
     <div class="alert warn"><b data-i18n="rp.policy.t">Shop drop-off policy</b><br><span data-i18n="rp.policy">We do not offer home service. All devices must be brought to our shop for checking and diagnostics. Since most repair work is done at night, devices that need intensive repair, reformatting or hardware replacement will need to be left at the shop. We will keep you updated on the repair status!</span></div>
   </section>
 
+  <div id="catRepair" class="stack">
   <section class="card">
     <h2 data-i18n="rp.desktop">&#128421;&#65039; Desktop Services</h2>
     <div class="tablewrap"><table>
@@ -48,6 +54,8 @@
         <tr><td>Battery / RAM / Storage Upgrade (Labor)</td><td>&#8369;250 - &#8369;400</td><td>Quick internal installations</td></tr>
       </tbody></table></div>
   </section>
+
+  </div>
 
   <form class="card stack" id="ticketForm" data-kind="repair" novalidate>
     <h2 data-i18n="rp.form.title">Request a repair</h2>
@@ -77,6 +85,7 @@
 <div class="footer"><span data-shop-name></span><br><a data-shop-fb target="_blank" rel="noopener" data-i18n="hub.fb">Message us on Facebook</a> <span data-if-email>&middot; <a data-shop-email></a></span></div>
 <script src="/static/js/common.js"></script>
 <script src="/static/js/i18n.js"></script>
+<script src="/static/js/catalog.js"></script>
 <script src="/static/js/ticket.js"></script>
 </body>
 </html>

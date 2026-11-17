@@ -6,6 +6,11 @@
 <title>JCM Prints and Computer Services</title>
 <meta name="description" content="Send documents and photos to print over the shop Wi-Fi. Souvenirs, tarpaulins and computer repair.">
 <meta name="theme-color" content="#2f5bea">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="JCM Prints">
 <link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
@@ -58,13 +63,30 @@
     </article>
   </section>
 
+  <section class="card" style="margin-top:14px" id="fbCard">
+    <h2 data-i18n="hub.fb.title">Have a link to print?</h2>
+    <p class="muted small" data-i18n="hub.fb.sub">Share a Facebook post, Canva design, Google Drive, OneDrive or WPS file straight to us - or paste the link - and we will print it.</p>
+    <a class="btn outline" href="/share" data-i18n="hub.fb.btn">Send a link or file</a>
+  </section>
+
+  <section class="card" id="installCard" hidden style="margin-top:14px">
+    <h2 data-i18n="pwa.title">Install the app on your phone</h2>
+    <p class="muted small" data-i18n="pwa.sub">Put JCM Prints on your home screen. On Android you can then pick it from the Share menu in Facebook, Canva, Google Drive and more.</p>
+    <div id="installAndroid" hidden><button type="button" class="btn" id="installBtn" data-i18n="pwa.btn">Install app</button></div>
+    <div id="installIos" hidden class="small"><b data-i18n="pwa.ios">On iPhone / iPad:</b>
+      <ol style="margin:6px 0 0;padding-left:20px"><li data-i18n="pwa.ios1">Open this page in Safari.</li><li data-i18n="pwa.ios2">Tap the Share button (square with an arrow).</li><li data-i18n="pwa.ios3">Choose &ldquo;Add to Home Screen&rdquo;.</li></ol>
+      <p class="muted" style="margin-top:6px" data-i18n="pwa.ios4">iPhone cannot add apps to the Share menu - copy the Facebook link, then tap &ldquo;Paste link&rdquo; on the Send from Facebook page.</p></div>
+    <div id="installMenu" hidden class="small muted" data-i18n="pwa.menu">Open your browser menu and tap &ldquo;Install app&rdquo; (or &ldquo;Add to Home screen&rdquo;).</div>
+    <div id="installHttp" hidden class="alert warn small"><span data-i18n="pwa.http">Installing only works on the internet address:</span> <a id="installUrl" href="#"></a></div>
+  </section>
+
   <section class="card" id="recentCard" hidden style="margin-top:14px">
     <h2 data-i18n="hub.recent">Your recent orders</h2>
     <ul id="recentList" class="files"></ul>
   </section>
 
   <section class="card" style="margin-top:14px">
-    <h3 data-i18n="hub.wifi.title">Phone says "No internet"?</h3>
+    <h3 data-i18n="hub.wifi.title">Connected to our WiFi and Phone says "No internet"?</h3>
     <p class="small muted" data-i18n="hub.wifi.body">That is normal - this Wi-Fi only connects you to the shop. If your phone asks, choose "Stay connected" (or "Keep Wi-Fi on"). If this page will not load, turn off mobile data for a moment, then try again.</p>
   </section>
 </main>

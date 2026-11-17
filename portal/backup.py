@@ -41,9 +41,14 @@ def run_backup() -> Path:
             src.backup(out)                                     # safe even while the portal is running
         with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
             z.write(copy, "portal.db")
-            for p in (settings.CONFIG_PATH, settings.pos_rates_path(), settings.data_dir() / "staff.json"):
+            for p in (settings.CONFIG_PATH, settings.pos_rates_path(), settings.data_dir() / "staff.json",
+                      settings.data_dir() / "catalog.json"):
                 if Path(p).exists():
                     z.write(p, Path(p).name)
+            imgs = settings.data_dir() / "catalog_images"          # pictures staff uploaded to the souvenirs gallery
+            if imgs.is_dir():
+                for f in imgs.glob("*.jpg"):
+                    z.write(f, "catalog_images/" + f.name)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
     for old in list_backups()[max(1, int(cfg["backup"]["keep"])):]:

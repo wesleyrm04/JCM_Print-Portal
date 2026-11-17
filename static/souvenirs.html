@@ -6,6 +6,11 @@
 <title>Custom Souvenirs & Gifts</title>
 <meta name="description" content="Personalized invitations, magnets, keychains, name tags and standees.">
 <meta name="theme-color" content="#2f5bea">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="JCM Prints">
 <link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
@@ -21,6 +26,7 @@
     <p class="muted" data-i18n="sv.sub">Personalized invitations, magnets, keychains, and party favors for any occasion.</p>
   </section>
 
+  <div id="catSouv" class="stack">
   <section class="card"><h2 data-i18n="sv.g1">Keychains &amp; Fridge Magnets</h2><div class="gallery">
     <figure><img src="/static/images/473601503_623107957327889_4500035839716247704_n.jpg" alt="Custom keychain" loading="lazy" width="300" height="300"><figcaption>Custom Keychain</figcaption></figure>
     <figure><img src="/static/images/473265139_620589684246383_9117151090067098987_n.jpg" alt="Car magnets" loading="lazy" width="300" height="300"><figcaption>Car Magnets</figcaption></figure>
@@ -38,6 +44,8 @@
   <section class="card"><h2 data-i18n="sv.g3">Custom Standees</h2><div class="gallery">
     <figure><img src="/static/images/480706072_650641861241165_484634563023305956_n.jpg" alt="Custom standee" loading="lazy" width="300" height="300"><figcaption>Custom Standee</figcaption></figure>
   </div></section>
+
+  </div>
 
   <form class="card stack" id="ticketForm" data-kind="souvenir" novalidate>
     <h2 data-i18n="sv.form.title">Ready to order? Tell us what you need</h2>
@@ -70,6 +78,7 @@
 <div class="footer"><span data-shop-name></span><br><a data-shop-fb target="_blank" rel="noopener" data-i18n="hub.fb">Message us on Facebook</a> <span data-if-email>&middot; <a data-shop-email></a></span></div>
 <script src="/static/js/common.js"></script>
 <script src="/static/js/i18n.js"></script>
+<script src="/static/js/catalog.js"></script>
 <script src="/static/js/ticket.js"></script>
 </body>
 </html>

@@ -29,7 +29,8 @@ STATUSES = {
 CLOSED_STATUSES = ("Completed", "Cancelled")
 CATEGORY_PREFIX = {"print": "", "repair": "R", "souvenir": "S"}
 KIND_CATEGORY = {"document": "print", "photo": "print", "rushid": "print",
-                 "typed": "print", "repair": "repair", "souvenir": "souvenir"}
+                 "typed": "print", "repair": "repair", "souvenir": "souvenir",
+                 "share": "print"}        # share = links / files shared from Facebook or another app
 
 DEFAULTS = {
     "shop": {
@@ -124,6 +125,10 @@ DEFAULTS = {
               # true: the old shared PIN keeps working next to named staff accounts. Set false once everyone has an account.
               "allow_shared_pin": True},
     "backup": {"keep": 14, "extra_dir": ""},       # nightly zip of the portal's own data; extra_dir = USB / NAS copy
+    # Customer order-status search. A code shows everything; a name shows only a masked name + the status.
+    "status": {"name_search": True, "name_search_days": 14, "name_search_max_results": 8, "name_search_min_chars": 3},
+    # Orders sent with the phone's Share button (Facebook / Messenger links, photos, PDFs).
+    "share": {"enabled": True, "max_links": 10},
 }
 
 _lock = threading.Lock()
@@ -248,6 +253,21 @@ def mount_point(cfg=None) -> str:
     return cfg["storage"].get("mount_point", "")
 
 
+def parse_ports(text) -> list:
+    """'80,1013' / '80 1013' / 8080 -> [80, 1013].  Empty -> [80].  Raises ValueError for anything that is not a port."""
+    import re
+    parts = [p for p in re.split(r"[,;\s]+", str(text or "").strip()) if p]
+    if not parts:
+        return [80]
+    out = []
+    for p in parts:
+        if not p.isdigit() or not (1 <= int(p) <= 65535):
+            raise ValueError(f"'{p}' is not a valid port (use numbers 1-65535, e.g. JCM_PORT=80,1013)")
+        if int(p) not in out:
+            out.append(int(p))
+    return out
+
+
 def data_dir(cfg=None) -> Path:
     cfg = cfg or get_config()
     p = Path(os.environ.get("JCM_DATA_DIR") or cfg["storage"]["data_dir"])
@@ -272,4 +292,8 @@ def public_config(cfg=None) -> dict:
                    "max_copies": lim["max_copies"], "max_text_chars": lim["max_text_chars"],
                    "max_request_mb_tunnel": lim["max_request_mb_tunnel"]},
         "retention_days": cfg["retention"]["days"],
+        "status_search": {"name_search": bool(cfg["status"]["name_search"]),
+                          "min_chars": int(cfg["status"]["name_search_min_chars"])},
+        "share": {"enabled": bool(cfg["share"]["enabled"]), "max_links": int(cfg["share"]["max_links"]),
+                  "services": __import__("portal.sharing", fromlist=["x"]).services_for_pages()},
     }
