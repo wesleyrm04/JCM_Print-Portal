@@ -1,5 +1,6 @@
 """Order folders on the NAS: numbering, safe names, order.json, zip, retention.
 The folders stay the source of truth; SQLite (db.py) is only a searchable index."""
+import io
 import json
 import os
 import re
@@ -168,3 +169,110 @@ def purge_files(folder: Path) -> int:
             except OSError:
                 pass
     return n
+
+
+# ---------------------------------------------------------------- deeper upload checks (v6)
+# sniff_ok() above only looks at the first bytes.  These checks look inside the file, because staff open customer
+# files on the shop computer.  Switch off with  "limits": {"deep_file_checks": false}  if a real customer file is refused.
+_OOXML = {"docx", "xlsx", "pptx"}
+_ODF = {"odt", "ods", "odp"}
+_OLE = {"doc", "xls", "ppt"}
+MAX_ZIP_ENTRIES = 5000
+MAX_ZIP_UNPACKED = 800 * 1024 * 1024          # everything inside, uncompressed
+MAX_ZIP_ENTRY = 400 * 1024 * 1024             # any one part
+_PROGRAM_MAGIC = (b"MZ", b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"#!", b"PK\x03\x04")
+_OLE_MACRO_MARKS = [m for w in ("_VBA_PROJECT", "VBAProject", "PROJECTwm") for m in (w.encode(), w.encode("utf-16le"))]
+
+
+def _looks_like_program(head: bytes) -> bool:
+    h = head.lstrip(b"\xef\xbb\xbf")
+    return any(h.startswith(m) for m in _PROGRAM_MAGIC)
+
+
+def _open_zip(f):
+    """ZipFile over an upload object. Python < 3.11 spooled files lack seekable(); fall back to a memory copy."""
+    try:
+        return zipfile.ZipFile(f)
+    except AttributeError:
+        f.seek(0)
+        return zipfile.ZipFile(io.BytesIO(f.read()))
+
+
+def zip_problem(f, ext: str) -> str:
+    """'' when the zip-based document looks sane, else a short reason (zip bombs, path tricks, macros)."""
+    try:
+        z = _open_zip(f)
+    except zipfile.BadZipFile:
+        return "is damaged or is not a real document"
+    with z:
+        infos = z.infolist()
+        if len(infos) > MAX_ZIP_ENTRIES:
+            return "has too many parts"
+        total = 0
+        names = set()
+        for i in infos:
+            n = i.filename.replace("\\", "/")
+            parts = n.split("/")
+            if n.startswith("/") or ".." in parts or re.match(r"^[A-Za-z]:", n):
+                return "contains an unsafe path"
+            if i.file_size > MAX_ZIP_ENTRY:
+                return "is too big once unpacked"
+            total += i.file_size
+            names.add(n.lower())
+        if total > MAX_ZIP_UNPACKED:
+            return "is too big once unpacked"
+        if ext in _OOXML:
+            if "[content_types].xml" not in names:
+                return "is not a real ." + ext + " document"
+            if any(n.endswith("vbaproject.bin") for n in names):
+                return "contains macros, which are not accepted"
+        elif ext in _ODF:
+            if "mimetype" not in names:
+                return "is not a real ." + ext + " document"
+            if any(n.startswith(("basic/", "scripts/")) for n in names):
+                return "contains macros, which are not accepted"
+    return ""
+
+
+def deep_check(ext: str, f):
+    """-> (ok, reason).  `f` is a seekable binary file object; its position is restored."""
+    pos = f.tell()
+    try:
+        f.seek(0)
+        head = f.read(16)
+        f.seek(0)
+        if ext in _OOXML or ext in _ODF:
+            why = zip_problem(f, ext)
+            return (False, why) if why else (True, "")
+        if ext in ("txt", "csv", "rtf") and _looks_like_program(head):
+            return False, "looks like a program, not a ." + ext + " file"
+        if ext == "pdf" and any(head.startswith(m) for m in _PROGRAM_MAGIC):
+            return False, "looks like a program, not a PDF"
+        return True, ""
+    except Exception:
+        return False, "could not be checked"
+    finally:
+        try:
+            f.seek(pos)
+        except Exception:
+            pass
+
+
+def has_ole_macros(path, limit: int = 30 * 1024 * 1024) -> bool:
+    """Old Office files (.doc/.xls/.ppt) keep macros in a VBA storage. True when the file has one (staff are warned)."""
+    try:
+        with open(path, "rb") as fh:
+            keep = b""
+            read = 0
+            while read < limit:
+                chunk = fh.read(1024 * 1024)
+                if not chunk:
+                    break
+                read += len(chunk)
+                buf = keep + chunk
+                if any(m in buf for m in _OLE_MACRO_MARKS):
+                    return True
+                keep = buf[-64:]
+    except OSError:
+        return False
+    return False

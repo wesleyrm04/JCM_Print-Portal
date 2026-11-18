@@ -136,11 +136,11 @@ put Cloudflare Access in front of the domain if you ever enable `admin.allow_rem
 
 ## 3f. Staff accounts, backups, GCash reference, warnings
 
-- **Staff accounts** (Staff -> Tools, owners only): each person gets a name + PIN (4-12 digits, stored hashed) and a role.
+- **Staff accounts** (Staff -> Tools, owners only): each person gets a name + PIN (6+ digits, or a password of 8+ characters; stored hashed) and a role.
   *Owner* can manage accounts, see the POS key, make/download backups; *Staff* can work with orders only. Every change
   is recorded under the person's name (order -> History; POS changes show as "POS: <cashier>"). While no account exists the
   old shared PIN keeps working; once everyone has an account, set `"admin": {"allow_shared_pin": false}` in `config.json`.
-  Repeated wrong PINs lock that account for ~10 minutes.
+  Five wrong PINs lock that account (whoever is typing) for ~10 minutes. v6: `allow_shared_pin` now ships as `false`, so the shared PIN stops working as soon as the first named account exists.
 - **Backups**: a zip of the portal's own data (order index, config, POS prices, staff accounts - but no PIN/keys) is made
   automatically every day into `data/backups/` (newest `backup.keep` = 14 kept). Set `backup.extra_dir` to a USB drive or a
   NAS folder to get a second copy. Staff -> Tools has *Back up now* and *Download latest*. The customer order folders on the
@@ -257,3 +257,11 @@ The sharing / status-search tests are `tests/test_share.py` (logic) and `tests/t
 - No online payments; GCash number is shown for manual payment only.
 - Shared Facebook links are not fetched or previewed by the portal; staff open them. Videos are not accepted as files (the link is enough).
 - iPhone cannot add the app to its Share menu (Apple does not allow it) - use *Paste link*.
+
+## Security hardening (v6) - read SECURITY.md
+
+v6 adds: a tunnel-port wall and per-device allow-list for the staff area and POS API (`JCM_PUBLIC_PORTS`, `JCM_ADMIN_NETWORKS`),
+a real byte-count upload limit (chunked uploads can no longer dodge it), file checks that look inside Office/zip files
+(zip bombs, macros, fake files), a bounded PDF renderer, server-side sessions (logout / PIN reset / removed account really end
+a login), per-account lock-out, stronger PIN rules and hashing, owner-only secret files (also on Windows), optional HTTPS
+on the shop network, and a hardened service file. **Three settings are strongly recommended - see SECURITY.md section 2.**

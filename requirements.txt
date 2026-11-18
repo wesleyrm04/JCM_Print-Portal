@@ -1,9 +1,13 @@
-# Core (needed)
-starlette>=0.40
+# Core (needed). Minimum versions raised in v6 for known security fixes (multipart / static-file / image-parser bugs).
+# After installing, run  tools/audit_deps.bat  (Windows) or  tools/audit_deps.sh  - it checks these against the public
+# vulnerability database (needs internet once), and tells you what to upgrade.
+starlette>=0.49.1
 uvicorn>=0.30
-python-multipart>=0.0.9
+python-multipart>=0.0.20
 pypdfium2>=4.30
-pillow>=10.0
+pillow>=11.3.0
 numpy>=1.24            # colour-level page analysis (same method as the POS)
 # Optional: QR codes in the staff page (pure Python)
 segno>=1.6
+# Optional: only for tools/make_lan_cert.py (HTTPS certificate for the shop network); openssl works too
+# cryptography>=42

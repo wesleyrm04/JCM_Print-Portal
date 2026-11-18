@@ -11,7 +11,7 @@ import zipfile
 from contextlib import closing
 from pathlib import Path
 
-from . import db, settings
+from . import auth, db, settings
 
 
 def backup_dir() -> Path:
@@ -51,6 +51,7 @@ def run_backup() -> Path:
                     z.write(f, "catalog_images/" + f.name)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+    auth.lock_down(dest)                                       # the zip holds the staff PIN hashes: owner-only
     for old in list_backups()[max(1, int(cfg["backup"]["keep"])):]:
         try:
             old.unlink()

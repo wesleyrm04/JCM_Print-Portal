@@ -10,6 +10,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -25,6 +26,7 @@ from . import docgen
 from .layout import find_layout, per_page
 
 _PDFIUM_LOCK = threading.Lock()          # pdfium is not thread-safe
+_LO_SEM = threading.BoundedSemaphore(1)  # one LibreOffice conversion at a time (it is heavy and parses untrusted files)
 IMAGE_EXT = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif"}
 OFFICE_EXT = {"doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf"}
 ZERO = Decimal("0")
@@ -62,6 +64,7 @@ def classify_array(arr, th_bw, th_half, th_tq) -> str:
 def analyze_pdf(path, cfg) -> dict:
     lim, an = cfg["limits"], cfg["analysis"]
     cap, tlimit = lim["max_pdf_pages_analyze"], lim["analyze_time_limit_s"]
+    max_px = max(1_000_000, int(lim.get("max_render_pixels", 12_000_000)))
     start = time.time()
     res = {"bw": 0, "half": 0, "tq": 0, "full": 0}
     done = 0
@@ -75,7 +78,12 @@ def analyze_pdf(path, cfg) -> dict:
             with _PDFIUM_LOCK:
                 page = doc[i]
                 try:
-                    arr = np.array(page.render(scale=1.0).to_pil().convert("RGB"))
+                    # a PDF can claim a page the size of a city block; never render more than max_render_pixels
+                    pw, ph = page.get_size()
+                    scale = 1.0
+                    if pw * ph > max_px:
+                        scale = math.sqrt(max_px / float(pw * ph))
+                    arr = np.array(page.render(scale=scale).to_pil().convert("RGB"))
                 finally:
                     page.close()
             res[classify_array(arr, an["thresh_bw"], an["thresh_half"], an["thresh_three_quarter"])] += 1
@@ -97,16 +105,25 @@ def pdf_page_count(path) -> int:
 
 
 # ---------------------------------------------------------------- other file types
+def _read_small(z, name, cap=1_000_000):
+    """Read one zip member, refusing anything that unpacks to more than `cap` bytes (zip-bomb guard)."""
+    info = z.getinfo(name)
+    if info.file_size > cap:
+        raise ValueError("document metadata is unreasonably large")
+    with z.open(info) as fh:
+        return fh.read(cap + 1).decode("utf-8", "ignore")
+
+
 def _office_pages_from_xml(path, ext):
     try:
         with zipfile.ZipFile(path) as z:
             if ext in ("docx", "pptx"):
-                xml = z.read("docProps/app.xml").decode("utf-8", "ignore")
+                xml = _read_small(z, "docProps/app.xml")
                 tag = "Pages" if ext == "docx" else "Slides"
                 m = re.search(rf"<{tag}>(\d+)</{tag}>", xml)
                 return int(m.group(1)) if m else None
             if ext in ("odt", "odp"):
-                xml = z.read("meta.xml").decode("utf-8", "ignore")
+                xml = _read_small(z, "meta.xml")
                 m = re.search(r'page-count="(\d+)"', xml)
                 return int(m.group(1)) if m else None
     except Exception:
@@ -120,15 +137,41 @@ def _libreoffice_bin(cfg):
     return shutil.which("soffice") or shutil.which("libreoffice")
 
 
+def _run_killing_tree(cmd, timeout):
+    """Run a program; on timeout kill it AND the helper processes it started (soffice.bin outlives soffice)."""
+    kw = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "stdin": subprocess.DEVNULL}
+    if os.name != "nt":
+        kw["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **kw)
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, timeout=15, check=False)
+            else:
+                os.killpg(proc.pid, signal.SIGKILL)
+        except Exception:
+            proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+        raise
+
+
 def _convert_to_pdf(path, cfg, timeout=60):
     exe = _libreoffice_bin(cfg)
     if not exe:
         return None
+    # one conversion at a time; if the converter is busy for too long, fall back to the quick page-count estimate
+    if not _LO_SEM.acquire(timeout=float(cfg["limits"].get("libreoffice_wait_s", 20))):
+        return None
     tmp = tempfile.mkdtemp(prefix="jcm_lo_")
     try:
-        cmd = [exe, "--headless", "--norestore", f"-env:UserInstallation=file://{tmp}/profile",
+        cmd = [exe, "--headless", "--norestore", "--nologo", f"-env:UserInstallation=file://{tmp}/profile",
                "--convert-to", "pdf", "--outdir", tmp, str(path)]
-        subprocess.run(cmd, timeout=timeout, capture_output=True, check=False)
+        _run_killing_tree(cmd, timeout)
         out = Path(tmp) / (Path(path).stem + ".pdf")
         if out.exists():
             return analyze_pdf(out, cfg)
@@ -136,6 +179,7 @@ def _convert_to_pdf(path, cfg, timeout=60):
         return None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+        _LO_SEM.release()
     return None
 
 

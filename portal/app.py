@@ -29,7 +29,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Redire
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import auth, backup, catalog, db, docgen, pricing, settings, sharing, storage
+from . import auth, backup, catalog, db, docgen, netsec, pricing, settings, sharing, storage
 
 STATIC = settings.BASE_DIR / "static"
 log = logging.getLogger("jcm")
@@ -53,11 +53,7 @@ PROXY_HEADERS = ("cf-connecting-ip", "cf-ray", "x-forwarded-for")
 
 
 def _is_private(ip: str) -> bool:
-    try:
-        a = ipaddress.ip_address(ip)
-        return a.is_private or a.is_loopback
-    except ValueError:
-        return False
+    return netsec.is_private(ip)
 
 
 def via_proxy(request: Request) -> bool:
@@ -66,15 +62,26 @@ def via_proxy(request: Request) -> bool:
     return any(request.headers.get(h) for h in PROXY_HEADERS)
 
 
+def peer_of(request: Request) -> str:
+    return request.client.host if request.client else "?"
+
+
+def server_port(request: Request) -> int:
+    """The port this request arrived on (so the tunnel's port can be walled off from the staff area)."""
+    srv = request.scope.get("server")
+    try:
+        return int(srv[1]) if srv else 0
+    except (TypeError, ValueError, IndexError):
+        return 0
+
+
 def client_ip(request: Request) -> str:
     """The real visitor address. Behind cloudflared every request arrives from 127.0.0.1, so without this
-    all visitors would share one rate-limit bucket (one person could lock everyone out)."""
-    peer = request.client.host if request.client else "?"
-    if via_proxy(request) and _is_private(peer):
-        ip = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if ip:
-            return ip[:64]
-    return peer
+    all visitors would share one rate-limit bucket. Proxy headers are believed ONLY from a trusted proxy
+    (network.trusted_proxies, default this PC), so a customer on the shop Wi-Fi cannot fake an address."""
+    cfg = settings.get_config()
+    return netsec.real_client_ip(peer_of(request), lambda n: request.headers.get(n, ""), via_proxy(request),
+                                 cfg["network"].get("trusted_proxies"))
 
 
 def is_https(request: Request) -> bool:
@@ -82,8 +89,27 @@ def is_https(request: Request) -> bool:
     return request.url.scheme == "https" or h.get("x-forwarded-proto", "").lower() == "https" or '"https"' in h.get("cf-visitor", "")
 
 
+def lan_only_ok(request: Request, networks) -> bool:
+    """The rule for the staff area and the POS connection. ALL of these must hold:
+       1. no proxy / tunnel headers,   2. not on a public (tunnel) port,
+       3. the connecting address is a private/loopback one (admin.require_private_peer),
+       4. if allowed_networks is set, the address is inside one of those networks."""
+    cfg = settings.get_config()
+    if via_proxy(request):
+        return False
+    if server_port(request) in settings.public_ports(cfg):
+        return False
+    peer = peer_of(request)
+    if cfg["admin"].get("require_private_peer", True) and not netsec.is_private(peer):
+        return False
+    return netsec.peer_in(peer, networks)
+
+
 def admin_allowed(request: Request) -> bool:
-    return settings.get_config()["admin"].get("allow_remote", False) or not via_proxy(request)
+    cfg = settings.get_config()
+    if cfg["admin"].get("allow_remote", False):
+        return True
+    return lan_only_ok(request, settings.admin_networks(cfg))
 
 
 REMOTE_MSG = "The staff area is only available on the shop network."
@@ -108,11 +134,12 @@ def require_owner(request: Request) -> dict:
 
 # ------------------------------------------------------------------ middleware
 class SecurityMiddleware:
-    """Request-size guard + security headers + no caching of API/admin responses."""
+    """Request-size guard (header AND real byte count) + CSRF check + security headers + no caching of API/admin."""
 
     CSP = ("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
            "script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
            "frame-ancestors 'self'")
+    UPLOAD_PATHS = ("/api/submit_order", "/api/estimate", "/api/admin/catalog/image", "/share")
 
     def __init__(self, app):
         self.app = app
@@ -136,29 +163,60 @@ class SecurityMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         hdrs = dict(scope["headers"])
-        cl = hdrs.get(b"content-length")
-        lim = settings.get_config()["limits"]
+        cfg = settings.get_config()
+        lim = cfg["limits"]
         tunnel = any(h in hdrs for h in (b"cf-connecting-ip", b"cf-ray", b"x-forwarded-for"))
-        limit_mb = lim["max_request_mb_tunnel"] if tunnel else lim["max_request_mb"]
-        if cl and cl.isdigit() and int(cl) > limit_mb * 1024 * 1024:
-            resp = JSONResponse({"detail": f"Your upload is too big (limit {limit_mb} MB in total)."}, status_code=413)
-            return await resp(scope, receive, send)
+        https = (scope.get("scheme") == "https" or hdrs.get(b"x-forwarded-proto", b"").lower() == b"https"
+                 or b'"https"' in hdrs.get(b"cf-visitor", b""))
         path = scope["path"]
-        if scope["method"] in ("POST", "PUT", "PATCH", "DELETE") and path != "/share" and self._cross_site(hdrs):
-            resp = JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
-            return await resp(scope, receive, send)
+        st = {"seen": 0, "exceeded": False, "started": False, "swallow": False}
 
-        async def send_wrap(message):
+        async def base_send(message):
             if message["type"] == "http.response.start":
+                st["started"] = True
                 h = MutableHeaders(scope=message)
                 h["X-Content-Type-Options"] = "nosniff"
                 h["Referrer-Policy"] = "no-referrer"
                 h["Content-Security-Policy"] = self.CSP
+                h["X-Frame-Options"] = "SAMEORIGIN"
+                h["Permissions-Policy"] = "geolocation=(), microphone=(), payment=(), usb=()"
+                if https and cfg.get("security", {}).get("hsts", True):
+                    h["Strict-Transport-Security"] = "max-age=31536000"
                 if path.startswith("/api/") or path.startswith("/admin"):
                     h["Cache-Control"] = "no-store"
             await send(message)
 
-        await self.app(scope, receive, send_wrap)
+        async def reply(status, detail):
+            resp = JSONResponse({"detail": detail}, status_code=status, headers={"Connection": "close"} if status == 413 else None)
+            await resp(scope, receive, base_send)
+
+        async def guarded_send(message):
+            if st["swallow"]:
+                return
+            if st["exceeded"] and message["type"] == "http.response.start":
+                st["swallow"] = True                 # whatever the app wanted to say, the real answer is 413
+                await reply(413, too_big_msg)
+                return
+            await base_send(message)
+
+        if path in self.UPLOAD_PATHS:
+            limit_mb = lim["max_request_mb_tunnel"] if tunnel else lim["max_request_mb"]
+            too_big_msg = f"Your upload is too big (limit {limit_mb} MB in total)."
+        else:
+            limit_mb = min(float(lim.get("max_json_mb", 2)), lim["max_request_mb_tunnel"] if tunnel else lim["max_request_mb"])
+            too_big_msg = "That request is too large."
+        max_bytes = int(limit_mb * 1024 * 1024)
+        cl = hdrs.get(b"content-length")
+        if cl and cl.isdigit() and int(cl) > max_bytes:
+            return await reply(413, too_big_msg)
+        if scope["method"] in ("POST", "PUT", "PATCH", "DELETE") and path != "/share" and self._cross_site(hdrs):
+            return await reply(403, "Cross-site request blocked.")
+
+        try:
+            await self.app(scope, netsec.limited_receive(receive, max_bytes, st), guarded_send)
+        except netsec.BodyTooLarge:
+            if not st["started"] and not st["swallow"]:
+                await reply(413, too_big_msg)
 
 
 # ------------------------------------------------------------------ pages
@@ -318,6 +376,10 @@ def check_upload(up, cfg, allowed=None):
     up.file.seek(0)
     if not storage.sniff_ok(ext, head):
         return False, f"\"{name}\" does not look like a real .{ext} file.", ext
+    if cfg["limits"].get("deep_file_checks", True):
+        deep_ok, why = storage.deep_check(ext, up.file)
+        if not deep_ok:
+            return False, f"\"{name}\" {why}.", ext
     return True, "", ext
 
 
@@ -348,10 +410,24 @@ async def api_config(request: Request):
 
 async def api_health(request: Request):
     ok, msg = await run_in_threadpool(storage.storage_status)
-    return JSONResponse({"ok": ok, "storage": "ok" if ok else msg, "time": settings.now().isoformat()})
+    if not ok:
+        log.warning("health check: %s", msg)                   # the detail (it names server paths) stays in the log
+    return JSONResponse({"ok": ok, "storage": "ok" if ok else "problem", "time": settings.now().isoformat()})
+
+
+_EST_SEM = threading.BoundedSemaphore(4)       # at most 4 customers' files are analysed at the same time
 
 
 def _estimate_uploads(ups, cfg):
+    if not _EST_SEM.acquire(timeout=30):
+        raise ApiError(503, "The shop computer is busy checking other files. Please try again in a moment.")
+    try:
+        return _estimate_uploads_inner(ups, cfg)
+    finally:
+        _EST_SEM.release()
+
+
+def _estimate_uploads_inner(ups, cfg):
     out = []
     for up in ups:
         ok, reason, ext = check_upload(up, cfg)
@@ -375,7 +451,7 @@ def _estimate_uploads(ups, cfg):
 
 
 async def api_estimate(request: Request):
-    if not auth.limiter.allow("est:" + client_ip(request), 90, 60):
+    if not auth.limiter.allow("est:" + client_ip(request), 90, 60) or not auth.limiter.allow("est:all", 240, 60):
         return jerr(429, "Too many requests - please wait a moment.")
     cfg = settings.get_config()
     async with request.form(max_files=10, max_fields=10) as form:
@@ -384,6 +460,8 @@ async def api_estimate(request: Request):
             return jerr(400, "No file received.")
         try:
             res = await run_in_threadpool(_estimate_uploads, ups, cfg)
+        except ApiError as e:
+            return jerr(e.status, e.detail)
         except Exception:
             log.exception("estimate failed")
             return jerr(500, "Could not check this file.")
@@ -391,6 +469,8 @@ async def api_estimate(request: Request):
 
 
 async def api_typed_estimate(request: Request):
+    if not auth.limiter.allow("typed:" + client_ip(request), 120, 60):
+        return jerr(429, "Too many requests - please wait a moment.")
     cfg = settings.get_config()
     try:
         body = await request.json()
@@ -546,25 +626,41 @@ def _price_share(links, saved):
     return preset, 0.0, [], opts, True, notes, extra
 
 
+def _scan_args(cmd: str, path: str) -> list:
+    """Split the configured scan command. On Windows shlex keeps the quote marks, which would break subprocess."""
+    parts = shlex.split(cmd, posix=(os.name != "nt"))
+    if os.name == "nt":
+        parts = [x[1:-1] if len(x) >= 2 and x[0] == x[-1] == '"' else x for x in parts]
+    return [a.replace("{file}", path) for a in parts]
+
+
 def _scan_files(folder: Path, saved: list, cfg) -> list:
-    """Optional antivirus hook. Exit code 1 (e.g. clamscan 'infected') rejects the order; any other failure is
-    logged and flagged for staff but does not block customers."""
-    cmd = (cfg["limits"].get("scan_command") or "").strip()
+    """Optional antivirus hook. An 'infected' exit code (limits.scan_infected_codes, default [1]; Windows Defender's
+    MpCmdRun.exe uses 2) rejects the order. Any other failure is logged and flagged for staff, and rejects the
+    order only when limits.scan_fail_closed is true."""
+    lim = cfg["limits"]
+    cmd = (lim.get("scan_command") or "").strip()
     if not cmd:
         return []
+    bad = {int(x) for x in (lim.get("scan_infected_codes") or [1])}
+    strict = bool(lim.get("scan_fail_closed", False))
     notes = []
     for sv in saved:
-        args = [a.replace("{file}", str(folder / sv["saved"])) for a in shlex.split(cmd, posix=(os.name != "nt"))]
+        args = _scan_args(cmd, str(folder / sv["saved"]))
         try:
-            rc = subprocess.run(args, capture_output=True, timeout=cfg["limits"]["scan_timeout_s"]).returncode
+            rc = subprocess.run(args, capture_output=True, timeout=lim["scan_timeout_s"]).returncode
         except Exception as e:
             log.error("virus scan could not run for %s: %s", sv["original"], e)
+            if strict:
+                raise ApiError(503, "The shop's virus scanner is not working right now. Please tell the counter staff.")
             notes.append(f"Not virus-scanned (scanner error): {sv['original']}")
             continue
-        if rc == 1:
+        if rc in bad:
             log.warning("virus scan flagged %s", sv["original"])
             raise ApiError(400, f"\"{sv['original']}\" was blocked by the virus scan.")
         if rc != 0:
+            if strict:
+                raise ApiError(503, "The shop's virus scanner is not working right now. Please tell the counter staff.")
             notes.append(f"Not virus-scanned (scanner exit code {rc}): {sv['original']}")
     return notes
 
@@ -669,6 +765,10 @@ def process_order(fields: dict, uploads: list, ip: str) -> dict:
         review = review or bool(scan_notes)
         warnings = [f"{sv['original']}: old Office format (.{pricing.ext_of(sv['original'])}) can carry macros - open it in "
                     "Protected View or print from a PDF copy" for sv in saved if pricing.ext_of(sv["original"]) in LEGACY_OFFICE]
+        for sv in saved:
+            if pricing.ext_of(sv["original"]) in LEGACY_OFFICE and storage.has_ole_macros(folder / sv["saved"]):
+                warnings.append(f"{sv['original']}: CONTAINS MACROS - do not open it in Office; ask the customer for a PDF copy")
+                review = True
         pay_ref = re.sub(r"[^A-Za-z0-9 \-]", "", fields.get("pay_ref", "") or "").strip()[:40]
         if extra_instr:
             instructions = (extra_instr + ("\n\nNotes: " + instructions if instructions else "")).strip()
@@ -794,7 +894,7 @@ def _find_status(q: str):
 async def api_status_find(request: Request):
     """Customer search: ?q=<order code or sender name>."""
     ip = client_ip(request)
-    if not auth.limiter.allow("find:" + ip, 40, 60):
+    if not auth.limiter.allow("find:" + ip, 40, 60) or not auth.limiter.allow("find:all", 300, 60):
         return jerr(429, "Too many requests - please wait a moment.")
     q = request.query_params.get("q", "").strip()[:60]
     if not q:
@@ -836,25 +936,36 @@ async def api_login(request: Request):
     ip = client_ip(request)
     try:
         body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError
     except Exception:
         return jerr(400, "Bad request.")
     name = str(body.get("name", "")).strip()[:30]
     if not auth.limiter.allow("login:" + ip, 12, 300) or not auth.limiter.allow("login:" + ip + ":" + name.casefold(), 6, 600):
         return jerr(429, "Too many attempts. Wait a few minutes and try again.")
-    allow_shared = settings.get_config()["admin"].get("allow_shared_pin", True)
+    adm = settings.get_config()["admin"]
+    lk_key = "acct:" + (name.casefold() or "(shared pin)")
+    lk_n, lk_s = int(adm.get("lockout_attempts", 5)), float(adm.get("lockout_minutes", 10)) * 60
+    if auth.lockout.locked(lk_key, lk_n, lk_s):         # per ACCOUNT: switching IP address does not help
+        log.warning("login refused (locked): %r from %s", name or "shared PIN", ip)
+        return jerr(429, "Too many wrong PINs. This login is locked for a few minutes - please wait and try again.")
+    allow_shared = adm.get("allow_shared_pin", True)
     sess = await run_in_threadpool(auth.login, name, str(body.get("pin", "")), allow_shared)
     if not sess:
-        log.warning("failed staff login from %s (%s)", ip, name or "shared PIN")
+        auth.lockout.fail(lk_key)
+        log.warning("failed staff login from %s (%r)", ip, name or "shared PIN")
         return jerr(401, "Wrong name or PIN." if name else "Wrong PIN.")
-    hours = settings.get_config()["admin"]["session_hours"]
+    auth.lockout.clear(lk_key)
+    hours = adm["session_hours"]
     log.info("staff login: %s (%s) from %s", sess["name"], sess["role"], ip)
     resp = JSONResponse({"ok": True, **sess})
     resp.set_cookie(auth.COOKIE, auth.make_token(hours, sess["name"], sess["role"]), max_age=int(hours * 3600),
-                    httponly=True, samesite="lax", path="/", secure=is_https(request))
+                    httponly=True, samesite="strict", path="/", secure=is_https(request))
     return resp
 
 
 async def api_logout(request: Request):
+    auth.revoke_session(request.cookies.get(auth.COOKIE, ""))        # the session really ends on the server
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(auth.COOKIE, path="/")
     return resp
@@ -883,12 +994,22 @@ async def admin_staff_save(request: Request):
     try:
         b = await request.json()
         await run_in_threadpool(auth.set_staff, str(b.get("name", "")), str(b.get("pin", "")), b.get("role", "staff"))
+        # a reset PIN ends that person's other sessions (the owner who is doing the reset stays logged in)
+        auth.revoke_account(" ".join(str(b.get("name", "")).split())[:30], keep_sid=auth.session_id(request.cookies.get(auth.COOKIE, "")))
     except ValueError as e:
         return jerr(400, str(e))
     except Exception:
         return jerr(400, "Bad request.")
     log.info("staff account saved by %s: %s", me["name"], b.get("name"))
     return JSONResponse({"ok": True, "staff": auth.staff_list()})
+
+
+async def admin_sessions_revoke_all(request: Request):
+    """'Log out everyone else' - for a lost phone or a PIN that may have leaked."""
+    me = require_owner(request)
+    n = await run_in_threadpool(auth.revoke_all, auth.session_id(request.cookies.get(auth.COOKIE, "")))
+    log.warning("all other staff sessions ended by %s (%d session(s))", me["name"], n)
+    return JSONResponse({"ok": True, "ended": n})
 
 
 async def admin_staff_delete(request: Request):
@@ -907,7 +1028,19 @@ async def admin_staff_delete(request: Request):
 
 
 def _folder_of(row) -> Path:
-    return Path(row["folder"]) if row and row.get("folder") else None
+    """The order's folder, but only if it really lives inside the orders directory (a tampered order.json or
+    database row can never point the staff area at some other part of the computer)."""
+    if not row or not row.get("folder"):
+        return None
+    p = Path(row["folder"])
+    cfg = settings.get_config()
+    if cfg.get("security", {}).get("confine_folders", True):
+        base = os.path.normcase(os.path.abspath(settings.upload_dir(cfg))).rstrip("\\/")
+        mine = os.path.normcase(os.path.abspath(p))
+        if not mine.startswith(base + os.sep):
+            log.warning("order folder outside the orders directory ignored: %s", p)
+            return None
+    return p
 
 
 async def admin_orders(request: Request):
@@ -1154,7 +1287,7 @@ _pos_seen = {"at": None, "ip": ""}
 def require_pos(request: Request):
     if not settings.get_config()["integration"]["pos_enabled"]:
         raise ApiError(404, "Not found")
-    if via_proxy(request):                          # the POS lives on the shop network, never on the internet
+    if not lan_only_ok(request, settings.pos_networks()):   # the POS lives on the shop network, never on the internet
         raise ApiError(403, "The POS connection is only available on the shop network.")
     ip = client_ip(request)
     if not auth.limiter.allow("posfail:ok:" + ip, 600, 60):
@@ -1337,12 +1470,30 @@ def _setup_logging():
         pass
 
 
+def _security_warnings():
+    """Plain-English reminders in the log when a protection is not switched on yet."""
+    cfg = settings.get_config()
+    adm = cfg["admin"]
+    if not adm.get("allow_remote") and not settings.public_ports(cfg):
+        log.warning("SECURITY: no tunnel port is set. The staff area is protected by tunnel headers only. "
+                    "Set JCM_PUBLIC_PORTS=<the port your tunnel points at> (e.g. 1013) so /admin and the POS API are refused there for good.")
+    if not adm.get("allow_remote") and not settings.admin_networks(cfg):
+        log.warning("SECURITY: admin.allowed_networks is empty - every device on the shop network, customers on the Wi-Fi "
+                    "included, can open the staff login. List the staff PC / phone, e.g. [\"127.0.0.1/32\", \"10.0.4.37/32\"].")
+    if adm.get("allow_shared_pin", True) and auth.staff_names():
+        log.warning("SECURITY: the shared PIN still works next to named accounts. Set admin.allow_shared_pin to false.")
+    env_pin = os.environ.get("JCM_ADMIN_PIN", "")
+    if env_pin and len(env_pin) < 6:
+        log.warning("SECURITY: JCM_ADMIN_PIN is shorter than 6 characters.")
+
+
 @asynccontextmanager
 async def lifespan(app):
     _setup_logging()
     db.init()
     auth._load()
     auth.pos_key()
+    _security_warnings()
     ok, msg = storage.storage_status()
     if ok:
         threading.Thread(target=lambda: log.info("indexed %d existing order(s)", db.reindex(settings.upload_dir())),
@@ -1373,6 +1524,7 @@ routes = [
     Route("/api/admin/me", api_me), Route("/api/admin/staff-names", api_staff_names),
     Route("/api/admin/staff", admin_staff_list, methods=["GET"]), Route("/api/admin/staff", admin_staff_save, methods=["POST"]),
     Route("/api/admin/staff/delete", admin_staff_delete, methods=["POST"]),
+    Route("/api/admin/sessions/revoke-all", admin_sessions_revoke_all, methods=["POST"]),
     Route("/api/admin/backup", admin_backup_info, methods=["GET"]), Route("/api/admin/backup", admin_backup_run, methods=["POST"]),
     Route("/api/admin/backup/download", admin_backup_download),
     Route("/api/admin/orders", admin_orders),

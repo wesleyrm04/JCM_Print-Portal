@@ -36,6 +36,7 @@ def main():
     cfg["limits"]["max_file_mb"] = 1            # makes the size-limit test cheap
     cfg["limits"]["max_request_mb_tunnel"] = 1   # makes the Cloudflare-limit test cheap
     cfg["limits"]["blocked_extensions"] = ["doc"]
+    cfg["admin"]["allow_shared_pin"] = True       # these tests log in with the shared PIN next to named accounts
     scan = tmp / "scan.py"
     scan.write_text("import sys\nsys.exit(1 if b'EICAR' in open(sys.argv[1],'rb').read() else 0)\n")
     cfg["limits"]["scan_command"] = f'"{sys.executable}" "{scan}" {{file}}'
@@ -239,16 +240,16 @@ def main():
 
         print("named staff accounts, roles and audit trail")
         c.post_json("/api/admin/login", {"pin": "123456"})
-        s, j, _ = c.post_json("/api/admin/staff", {"name": "Maria", "pin": "1234", "role": "owner"})
+        s, j, _ = c.post_json("/api/admin/staff", {"name": "Maria", "pin": "482913", "role": "owner"})
         check(s == 200 and j["staff"][0]["name"] == "Maria", "owner (shared-PIN session) can create the first account")
         check(c.post_json("/api/admin/staff", {"name": "Ben", "pin": "56ab", "role": "staff"})[0] == 400, "PIN must be digits")
-        check(c.post_json("/api/admin/staff", {"name": "Ben", "pin": "5678", "role": "staff"})[0] == 200, "staff account created")
+        check(c.post_json("/api/admin/staff", {"name": "Ben", "pin": "739206", "role": "staff"})[0] == 200, "staff account created")
         s, j, _ = Client(srv.base).get("/api/admin/staff-names")
         check(j["names"] == ["Ben", "Maria"] and j["shared_pin"] is True, f"login drop-down lists names {j['names']}")
         ben = Client(srv.base)
         check(ben.post_json("/api/admin/login", {"name": "Ben", "pin": "0000"})[0] == 401, "wrong PIN for a named account is refused")
-        check(ben.post_json("/api/admin/login", {"name": "Nobody", "pin": "5678"})[0] == 401, "unknown name is refused")
-        s, j, _ = ben.post_json("/api/admin/login", {"name": "Ben", "pin": "5678"})
+        check(ben.post_json("/api/admin/login", {"name": "Nobody", "pin": "739206"})[0] == 401, "unknown name is refused")
+        s, j, _ = ben.post_json("/api/admin/login", {"name": "Ben", "pin": "739206"})
         check(s == 200 and j["name"] == "Ben" and j["role"] == "staff", "named login works")
         check(ben.get("/api/admin/me")[1]["name"] == "Ben", "session knows who is logged in")
         check(ben.get("/api/admin/orders")[0] == 200, "staff can work with orders")
@@ -258,11 +259,11 @@ def main():
         oj = json.load(open(next(up.glob("*/001_*/order.json"))))
         check(any(h["by"] == "Ben" for h in oj["history"]), "the order history names the real person (Ben)")
         maria = Client(srv.base)
-        check(maria.post_json("/api/admin/login", {"name": "maria", "pin": "1234"})[1]["role"] == "owner", "names are not case-sensitive; owner role")
+        check(maria.post_json("/api/admin/login", {"name": "maria", "pin": "482913"})[1]["role"] == "owner", "names are not case-sensitive; owner role")
         check(maria.post_json("/api/admin/staff/delete", {"name": "Maria"})[0] == 400, "cannot remove your own account")
         s, j, _ = maria.post_json("/api/admin/staff/delete", {"name": "Ben"})
         check(s == 200 and ben.get("/api/admin/orders")[0] == 401, "removing an account ends their session immediately")
-        check(c.post_json("/api/admin/staff", {"name": "Maria", "pin": "1234", "role": "staff"})[0] == 400, "the last owner cannot be demoted")
+        check(c.post_json("/api/admin/staff", {"name": "Maria", "pin": "482913", "role": "staff"})[0] == 400, "the last owner cannot be demoted")
 
         print("backups")
         s, j, _ = maria.post_json("/api/admin/backup", {})
@@ -316,7 +317,7 @@ def main():
 
         print("lock-out")
         for _ in range(8): Client(srv.base).post_json("/api/admin/login", {"name": "Maria", "pin": "9999"})
-        check(Client(srv.base).post_json("/api/admin/login", {"name": "Maria", "pin": "1234"})[0] == 429, "repeated wrong PINs lock the account for a while")
+        check(Client(srv.base).post_json("/api/admin/login", {"name": "Maria", "pin": "482913"})[0] == 429, "repeated wrong PINs lock the account for a while")
 
         c.post_json("/api/admin/logout", {})
         check(c.get("/api/admin/orders")[0] == 401, "logout works")

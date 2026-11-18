@@ -59,6 +59,13 @@ DEFAULTS = {
         "blocked_extensions": [],           # e.g. ["doc","xls","ppt"] to refuse old macro-capable Office files
         # Optional virus scan of every upload, e.g. "clamscan --no-summary {file}" (exit code 0 = clean).
         "scan_command": "", "scan_timeout_s": 60,
+        # v6 security limits
+        "scan_infected_codes": [1],          # exit codes that mean "virus found" (Windows Defender's MpCmdRun uses 2)
+        "scan_fail_closed": False,           # true = refuse the order when the scanner itself fails (stricter)
+        "deep_file_checks": True,            # look inside .docx/.xlsx/.pptx/.odt... (zip bombs, macros, fake files)
+        "max_json_mb": 2,                    # biggest allowed body for every non-upload request
+        "max_render_pixels": 12000000,       # never render a PDF page bigger than this when counting colour
+        "libreoffice_wait_s": 20,            # how long an estimate waits for the (single) LibreOffice converter
     },
     "analysis": {
         # Same rule as the POS: a page's colour share = coloured pixels / inked pixels (%).
@@ -114,7 +121,8 @@ DEFAULTS = {
              "pieces": [{"size_in": 2, "count": 2}, {"size_in": 1, "count": 4}]},
         ],
     },
-    "integration": {"pos_enabled": True},      # lets the POS connect (LAN only, needs the POS key)
+    # allowed_networks: only these addresses may use the POS connection, e.g. ["10.0.4.20/32"]. Empty = any shop-network address.
+    "integration": {"pos_enabled": True, "allowed_networks": []},      # lets the POS connect (LAN only, needs the POS key)
     "payment": {
         "note": "Please pay at the counter when you pick up your order.",
         "gcash_number": "", "gcash_name": "",
@@ -122,11 +130,21 @@ DEFAULTS = {
     "retention": {"days": 14},          # delete customer files N days after Completed/Cancelled (0 = never)
     # allow_remote=false: the staff area only works from the shop network, never through the tunnel/internet.
     "admin": {"session_hours": 12, "allow_remote": False,
+              # allowed_networks: only these addresses may open the staff area, e.g. ["127.0.0.1/32", "10.0.4.37/32"]
+              # (this PC and the staff phone). Empty = any shop-network address. Customers on the shop Wi-Fi are on the
+              # same network, so setting this is the strongest protection for /admin.
+              "allowed_networks": [], "require_private_peer": True,
+              "lockout_attempts": 5, "lockout_minutes": 10,
               # true: the old shared PIN keeps working next to named staff accounts. Set false once everyone has an account.
               "allow_shared_pin": True},
     "backup": {"keep": 14, "extra_dir": ""},       # nightly zip of the portal's own data; extra_dir = USB / NAS copy
     # Customer order-status search. A code shows everything; a name shows only a masked name + the status.
     "status": {"name_search": True, "name_search_days": 14, "name_search_max_results": 8, "name_search_min_chars": 3},
+    # public_ports: ports that the tunnel / internet uses. The staff area and POS API are ALWAYS refused on these ports
+    # (also settable with the JCM_PUBLIC_PORTS environment variable, e.g. JCM_PUBLIC_PORTS=1013).
+    # trusted_proxies: addresses whose X-Forwarded-For / CF-Connecting-IP we believe (the tunnel program on this PC).
+    "network": {"public_ports": [], "trusted_proxies": ["127.0.0.1", "::1"]},
+    "security": {"confine_folders": True, "hsts": True},
     # Orders sent with the phone's Share button (Facebook / Messenger links, photos, PDFs).
     "share": {"enabled": True, "max_links": 10},
 }
@@ -266,6 +284,37 @@ def parse_ports(text) -> list:
         if int(p) not in out:
             out.append(int(p))
     return out
+
+
+def public_ports(cfg=None) -> list:
+    """Ports the internet / tunnel arrives on (env JCM_PUBLIC_PORTS + config network.public_ports)."""
+    import re
+    cfg = cfg or get_config()
+    out = []
+    raw = list(cfg.get("network", {}).get("public_ports") or [])
+    raw += [p for p in re.split(r"[,;\s]+", os.environ.get("JCM_PUBLIC_PORTS", "")) if p]
+    for p in raw:
+        try:
+            n = int(str(p).strip())
+        except ValueError:
+            continue
+        if 1 <= n <= 65535 and n not in out:
+            out.append(n)
+    return out
+
+
+def admin_networks(cfg=None) -> list:
+    env = os.environ.get("JCM_ADMIN_NETWORKS", "").strip()
+    if env:
+        return [x for x in env.replace(";", ",").split(",") if x.strip()]
+    return list((cfg or get_config())["admin"].get("allowed_networks") or [])
+
+
+def pos_networks(cfg=None) -> list:
+    env = os.environ.get("JCM_POS_NETWORKS", "").strip()
+    if env:
+        return [x for x in env.replace(";", ",").split(",") if x.strip()]
+    return list((cfg or get_config())["integration"].get("allowed_networks") or [])
 
 
 def data_dir(cfg=None) -> Path:

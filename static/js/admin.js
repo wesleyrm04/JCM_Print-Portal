@@ -228,6 +228,11 @@
     try { await jpost('/api/admin/staff', { name: $id('stName').value, pin: $id('stPin').value, role: $id('stRole').value }); $id('stPin').value = ''; toast('Saved', 'ok'); loadStaff(); }
     catch (e) { toast(e.message, 'bad'); }
   });
+  $id('stRevokeAll').addEventListener('click', async () => {
+    if (!confirm('Log out every other staff login (other phones and computers)? You stay logged in.')) return;
+    try { const r = await jpost('/api/admin/sessions/revoke-all', {}); toast('Logged out ' + r.ended + ' other session(s)', 'ok'); }
+    catch (e) { toast(e.message, 'bad'); }
+  });
   async function loadBackup() {
     try {
       const b = await api('/api/admin/backup');

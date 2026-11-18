@@ -8,7 +8,7 @@
     "address": "San Antonio, San Pascual, Batangas",
     "hours": "5 AM - 2 PM, Weekdays",
     "facebook": "https://facebook.com/jcmgcs",
-    "public_url": "https://jcmprints.nx1.lol"
+    "public_url": "https://jcmgcs.nx1.lol"
   },
   "storage": {
     "upload_dir": "/mnt/nas_spool/customer_orders",
@@ -27,7 +27,15 @@
     "min_free_gb": 1.0,
     "blocked_extensions": [],
     "scan_command": "",
-    "scan_timeout_s": 60
+    "scan_timeout_s": 60,
+    "scan_infected_codes": [
+      1
+    ],
+    "scan_fail_closed": false,
+    "deep_file_checks": true,
+    "max_json_mb": 2,
+    "max_render_pixels": 12000000,
+    "libreoffice_wait_s": 20
   },
   "analysis": {
     "thresh_bw": 2.0,
@@ -230,7 +238,8 @@
     ]
   },
   "integration": {
-    "pos_enabled": true
+    "pos_enabled": true,
+    "allowed_networks": []
   },
   "payment": {
     "note": "Please pay at the counter when you pick up your order.",
@@ -242,6 +251,22 @@
   },
   "admin": {
     "session_hours": 12,
-    "allow_remote": false
+    "allow_remote": false,
+    "allow_shared_pin": false,
+    "allowed_networks": [],
+    "require_private_peer": true,
+    "lockout_attempts": 5,
+    "lockout_minutes": 10
+  },
+  "network": {
+    "public_ports": [],
+    "trusted_proxies": [
+      "127.0.0.1",
+      "::1"
+    ]
+  },
+  "security": {
+    "confine_folders": true,
+    "hsts": true
   }
 }

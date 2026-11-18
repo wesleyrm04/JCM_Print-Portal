@@ -4,8 +4,12 @@ set -e
 cd "$(dirname "$0")"
 PY=${PYTHON:-python3}
 $PY tests/test_logic.py
+$PY tests/test_security.py
+$PY tests/test_middleware.py
+$PY tests/test_app_rules.py
 $PY tests/test_js.py
 $PY tests/test_api.py
+$PY tests/test_api_security.py
 $PY tests/test_share.py
 $PY tests/test_api_share.py
 $PY tests/test_catalog.py
